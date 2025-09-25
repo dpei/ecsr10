@@ -1,0 +1,211 @@
+---
+title: "Getting Started with ecsr10"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{Getting Started with ecsr10}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Introduction
+
+The `ecsr10` package provides an R implementation of the Elixhauser Comorbidity Software Refined (CMR) workflow for analyzing ICD-10-CM diagnosis codes and calculating comorbidity indices. This package is designed for healthcare researchers and data analysts who need to identify comorbidities and calculate risk scores from patient diagnosis data.
+
+## Installation
+
+Install the development version from GitHub:
+
+```{r eval=FALSE}
+# install.packages("devtools")
+devtools::install_github("dpei/ecsr10")
+```
+
+```{r setup}
+library(ecsr10)
+library(dplyr)
+```
+
+## Basic Workflow
+
+The ecsr10 package provides a simple workflow for most users:
+
+1. **Prepare your patient diagnosis data** (wide format with diagnosis and POA columns)
+2. **Apply comorbidity analysis** using the built-in lookup data
+3. **Calculate risk indices** for readmission and mortality
+
+The package automatically uses built-in lookup data, making the process straightforward.
+
+## Step 1: Data Preparation
+
+Your patient diagnosis data should be in wide format with:
+- Diagnosis code columns (DX1, DX2, ..., DXn)
+- Present on Admission (POA) columns (POA1, POA2, ..., POAn)  
+- Year and quarter for ICD version determination
+- Patient/encounter identifiers
+
+```{r}
+# Example patient diagnosis data structure
+example_patient_data <- data.frame(
+  encounter_id = 1:3,
+  test_type = "example",
+  dx1 = c("E119", "I10", "Z5111"),
+  dx2 = c("I10", "E119", "N183"),
+  dx3 = c(NA, "N183", NA),
+  poa1 = c("Y", "Y", "Y"),
+  poa2 = c("N", "Y", "W"),
+  poa3 = c(NA, "Y", NA),
+  year = 2025,
+  quarter = 1,
+  stringsAsFactors = FALSE
+)
+
+print(example_patient_data)
+```
+
+## Quick Start Example
+
+```{r}
+# Simple workflow - uses built-in lookup data automatically
+result <- comorbidity(example_patient_data, 
+                      dx_cols = c("dx1", "dx2", "dx3"),
+                      poa_cols = c("poa1", "poa2", "poa3"))
+
+# Calculate risk indices
+result_with_indices <- cmr_index(result)
+
+# View summary
+head(result_with_indices[,c("encounter_id", "CMR_Index_Readmission", "CMR_Index_Mortality")])
+```
+
+That's it! The package handles all the complex lookup building internally.
+
+## Understanding Your Data
+
+For the simple workflow above, the package used the example data you prepared. 
+Let's examine the structure and results in more detail.
+
+## Detailed Analysis
+
+```{r}
+# Examine the comorbidity flags in more detail
+result_summary <- result_with_indices %>%
+  select(encounter_id, test_type, starts_with("CMR_")) %>%
+  select(1:10)  # Show first 10 columns for brevity
+
+print(result_summary)
+```
+
+## Risk Index Details
+
+```{r}
+# View the calculated indices
+indices_summary <- result_with_indices %>%
+  select(encounter_id, CMR_Index_Readmission, CMR_Index_Mortality)
+
+print(indices_summary)
+
+# Basic summary statistics
+summary(result_with_indices[c("CMR_Index_Readmission", "CMR_Index_Mortality")])
+```
+
+## Advanced Usage
+
+### Custom Data Sources
+
+For advanced users who need custom lookup data, you can still provide your own formats:
+
+```{r eval=FALSE}
+# Advanced workflow with custom lookup data
+# Note: These functions are internal but can still be used if needed
+custom_comfmt <- build_comfmt_from_csv("path/to/your/lookup.csv")
+custom_poa <- build_poa_exempt_formats("path/to/your/poa_exempt.csv")
+
+result <- comorbidity(patient_data, 
+                      dx_cols = c("dx1", "dx2", "dx3"),
+                      comfmt = custom_comfmt,
+                      poa_exempt = custom_poa)
+```
+
+## Understanding the Results
+
+### Comorbidity Flags
+
+The analysis produces 38 binary flags indicating the presence of specific comorbidities:
+
+- **CMR_AIDS**: HIV/AIDS
+- **CMR_ALCOHOL**: Alcohol abuse
+- **CMR_ANEMDEF**: Deficiency anemia  
+- **CMR_AUTOIMMUNE**: Autoimmune conditions
+- **CMR_CANCER_METS**: Metastatic cancer
+- *... and 33 others*
+
+### Risk Indices
+
+Two risk scores are calculated:
+
+- **CMR_Index_Readmission**: Weighted score for readmission risk
+- **CMR_Index_Mortality**: Weighted score for mortality risk
+
+Higher scores indicate higher risk. Scores can be negative due to protective factors.
+
+### Present on Admission (POA) Logic
+
+The package handles POA logic automatically:
+
+- **POA-neutral conditions**: Always assigned regardless of POA indicator
+- **POA-dependent conditions**: Only assigned if POA='Y'/'W' or code is POA-exempt
+- **Special cases**: CBVD logic and combination codes
+
+## Advanced Usage
+
+### Custom Data Sources
+
+You can use your own comorbidity lookup files:
+
+```{r eval=FALSE}
+# Use custom lookup file
+custom_comfmt <- build_comfmt_from_csv("path/to/your/lookup.csv")
+
+# Use custom POA exempt list  
+custom_poa <- build_poa_exempt_formats("path/to/your/poa_exempt.csv")
+```
+
+### Performance Considerations
+
+For large datasets, the package automatically optimizes performance through:
+
+- Vectorized pattern matching
+- Efficient memory management
+- Pre-compiled regex patterns
+
+### Troubleshooting
+
+Common issues and solutions:
+
+1. **Missing POA columns**: Set `poa_cols = NULL` and `use_poa = FALSE`
+2. **Wrong year/quarter**: Ensure year/quarter columns exist and contain valid values
+3. **ICD code format**: The package normalizes codes automatically (removes dots, uppercase)
+
+## References
+
+- Healthcare Cost and Utilization Project (HCUP) Elixhauser Comorbidity Software
+- Agency for Healthcare Research and Quality (AHRQ)
+- CMS ICD-10-CM coding guidelines
+
+```{r, include=FALSE}
+# No cleanup needed - package handles temporary files automatically
+```
