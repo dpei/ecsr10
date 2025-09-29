@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Getting Started with ecsr10</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Getting Started with ecsr10</h1>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#introduction" id="toc-introduction">Introduction</a></li>
+<li><a href="#installation" id="toc-installation">Installation</a></li>
+<li><a href="#basic-workflow" id="toc-basic-workflow">Basic
+Workflow</a></li>
+<li><a href="#step-1-data-preparation" id="toc-step-1-data-preparation">Step 1: Data Preparation</a></li>
+<li><a href="#quick-start-example" id="toc-quick-start-example">Quick
+Start Example</a></li>
+<li><a href="#understanding-your-data" id="toc-understanding-your-data">Understanding Your Data</a></li>
+<li><a href="#detailed-analysis" id="toc-detailed-analysis">Detailed
+Analysis</a></li>
+<li><a href="#risk-index-details" id="toc-risk-index-details">Risk Index
+Details</a></li>
+<li><a href="#advanced-usage" id="toc-advanced-usage">Advanced
+Usage</a></li>
+<li><a href="#understanding-the-results" id="toc-understanding-the-results">Understanding the Results</a></li>
+<li><a href="#advanced-usage-1" id="toc-advanced-usage-1">Advanced
+Usage</a></li>
+<li><a href="#references" id="toc-references">References</a></li>
+</ul>
+</div>
+
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>The <code>ecsr10</code> package provides an R implementation of the
+Elixhauser Comorbidity Software Refined (CMR) workflow for analyzing
+ICD-10-CM diagnosis codes and calculating comorbidity indices. This
+package is designed for healthcare researchers and data analysts who
+need to identify comorbidities and calculate risk scores from patient
+diagnosis data.</p>
+</div>
+<div id="installation" class="section level2">
+<h2>Installation</h2>
+<p>Install the development version from GitHub:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># install.packages(&quot;devtools&quot;)</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a>devtools<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;dpei/ecsr10&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">library</span>(ecsr10)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt; Attaching package: &#39;dplyr&#39;</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; The following objects are masked from &#39;package:stats&#39;:</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;     filter, lag</span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; The following objects are masked from &#39;package:base&#39;:</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt;     intersect, setdiff, setequal, union</span></span></code></pre></div>
+</div>
+<div id="basic-workflow" class="section level2">
+<h2>Basic Workflow</h2>
+<p>The ecsr10 package provides a simple workflow for most users:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Prepare your patient diagnosis data</strong> (wide format
+with diagnosis and POA columns)</li>
+<li><strong>Apply comorbidity analysis</strong> using the built-in
+lookup data</li>
+<li><strong>Calculate risk indices</strong> for readmission and
+mortality</li>
+</ol>
+<p>The package automatically uses built-in lookup data, making the
+process straightforward.</p>
+</div>
+<div id="step-1-data-preparation" class="section level2">
+<h2>Step 1: Data Preparation</h2>
+<p>Your patient diagnosis data should be in wide format with: -
+Diagnosis code columns (DX1, DX2, …, DXn) - Present on Admission (POA)
+columns (POA1, POA2, …, POAn)<br />
+- Year and quarter for ICD version determination - Patient/encounter
+identifiers</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># Example patient diagnosis data structure</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>example_patient_data <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">encounter_id =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">test_type =</span> <span class="st">&quot;example&quot;</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>  <span class="at">dx1 =</span> <span class="fu">c</span>(<span class="st">&quot;E119&quot;</span>, <span class="st">&quot;I10&quot;</span>, <span class="st">&quot;Z5111&quot;</span>),</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>  <span class="at">dx2 =</span> <span class="fu">c</span>(<span class="st">&quot;I10&quot;</span>, <span class="st">&quot;E119&quot;</span>, <span class="st">&quot;N183&quot;</span>),</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  <span class="at">dx3 =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="st">&quot;N183&quot;</span>, <span class="cn">NA</span>),</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>  <span class="at">poa1 =</span> <span class="fu">c</span>(<span class="st">&quot;Y&quot;</span>, <span class="st">&quot;Y&quot;</span>, <span class="st">&quot;Y&quot;</span>),</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>  <span class="at">poa2 =</span> <span class="fu">c</span>(<span class="st">&quot;N&quot;</span>, <span class="st">&quot;Y&quot;</span>, <span class="st">&quot;W&quot;</span>),</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>  <span class="at">poa3 =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="st">&quot;Y&quot;</span>, <span class="cn">NA</span>),</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>  <span class="at">year =</span> <span class="dv">2025</span>,</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>  <span class="at">quarter =</span> <span class="dv">1</span>,</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>)</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="fu">print</span>(example_patient_data)</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt;   encounter_id test_type   dx1  dx2  dx3 poa1 poa2 poa3 year quarter</span></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="co">#&gt; 1            1   example  E119  I10 &lt;NA&gt;    Y    N &lt;NA&gt; 2025       1</span></span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="co">#&gt; 2            2   example   I10 E119 N183    Y    Y    Y 2025       1</span></span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a><span class="co">#&gt; 3            3   example Z5111 N183 &lt;NA&gt;    Y    W &lt;NA&gt; 2025       1</span></span></code></pre></div>
+</div>
+<div id="quick-start-example" class="section level2">
+<h2>Quick Start Example</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co"># Simple workflow - uses built-in lookup data automatically</span></span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">comorbidity</span>(example_patient_data, </span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>                      <span class="at">dx_cols =</span> <span class="fu">c</span>(<span class="st">&quot;dx1&quot;</span>, <span class="st">&quot;dx2&quot;</span>, <span class="st">&quot;dx3&quot;</span>),</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>                      <span class="at">poa_cols =</span> <span class="fu">c</span>(<span class="st">&quot;poa1&quot;</span>, <span class="st">&quot;poa2&quot;</span>, <span class="st">&quot;poa3&quot;</span>))</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co"># Calculate risk indices</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>result_with_indices <span class="ot">&lt;-</span> <span class="fu">cmr_index</span>(result)</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co"># View summary</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="fu">head</span>(result_with_indices[,<span class="fu">c</span>(<span class="st">&quot;encounter_id&quot;</span>, <span class="st">&quot;CMR_Index_Readmission&quot;</span>, <span class="st">&quot;CMR_Index_Mortality&quot;</span>)])</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt;   encounter_id CMR_Index_Readmission CMR_Index_Mortality</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; 1            1                     0                   0</span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; 2            2                     4                   3</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt; 3            3                     4                   3</span></span></code></pre></div>
+<p>That’s it! The package handles all the complex lookup building
+internally.</p>
+</div>
+<div id="understanding-your-data" class="section level2">
+<h2>Understanding Your Data</h2>
+<p>For the simple workflow above, the package used the example data you
+prepared. Let’s examine the structure and results in more detail.</p>
+</div>
+<div id="detailed-analysis" class="section level2">
+<h2>Detailed Analysis</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="co"># Examine the comorbidity flags in more detail</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>result_summary <span class="ot">&lt;-</span> result_with_indices <span class="sc">%&gt;%</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="fu">select</span>(encounter_id, test_type, <span class="fu">starts_with</span>(<span class="st">&quot;CMR_&quot;</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="fu">select</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>)  <span class="co"># Show first 10 columns for brevity</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="fu">print</span>(result_summary)</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt;   encounter_id test_type CMR_AIDS CMR_ALCOHOL CMR_ANEMDEF CMR_AUTOIMMUNE</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; 1            1   example        0           0           0              0</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; 2            2   example        0           0           0              0</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; 3            3   example        0           0           0              0</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt;   CMR_BLDLOSS CMR_CANCER_LEUK CMR_CANCER_LYMPH CMR_CANCER_METS</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; 1           0               0                0               0</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; 2           0               0                0               0</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&gt; 3           0               0                0               0</span></span></code></pre></div>
+</div>
+<div id="risk-index-details" class="section level2">
+<h2>Risk Index Details</h2>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="co"># View the calculated indices</span></span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>indices_summary <span class="ot">&lt;-</span> result_with_indices <span class="sc">%&gt;%</span></span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="fu">select</span>(encounter_id, CMR_Index_Readmission, CMR_Index_Mortality)</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="fu">print</span>(indices_summary)</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt;   encounter_id CMR_Index_Readmission CMR_Index_Mortality</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; 1            1                     0                   0</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; 2            2                     4                   3</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; 3            3                     4                   3</span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co"># Basic summary statistics</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="fu">summary</span>(result_with_indices[<span class="fu">c</span>(<span class="st">&quot;CMR_Index_Readmission&quot;</span>, <span class="st">&quot;CMR_Index_Mortality&quot;</span>)])</span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt;  CMR_Index_Readmission CMR_Index_Mortality</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt;  Min.   :0.000         Min.   :0.0        </span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt;  1st Qu.:2.000         1st Qu.:1.5        </span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt;  Median :4.000         Median :3.0        </span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt;  Mean   :2.667         Mean   :2.0        </span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a><span class="co">#&gt;  3rd Qu.:4.000         3rd Qu.:3.0        </span></span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt;  Max.   :4.000         Max.   :3.0</span></span></code></pre></div>
+</div>
+<div id="advanced-usage" class="section level2">
+<h2>Advanced Usage</h2>
+<div id="custom-data-sources" class="section level3">
+<h3>Custom Data Sources</h3>
+<p>For advanced users who need custom lookup data, you can still provide
+your own formats:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="co"># Advanced workflow with custom lookup data</span></span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co"># Note: These functions are internal but can still be used if needed</span></span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>custom_comfmt <span class="ot">&lt;-</span> <span class="fu">build_comfmt_from_csv</span>(<span class="st">&quot;path/to/your/lookup.csv&quot;</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>custom_poa <span class="ot">&lt;-</span> <span class="fu">build_poa_exempt_formats</span>(<span class="st">&quot;path/to/your/poa_exempt.csv&quot;</span>)</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">comorbidity</span>(patient_data, </span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>                      <span class="at">dx_cols =</span> <span class="fu">c</span>(<span class="st">&quot;dx1&quot;</span>, <span class="st">&quot;dx2&quot;</span>, <span class="st">&quot;dx3&quot;</span>),</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>                      <span class="at">comfmt =</span> custom_comfmt,</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>                      <span class="at">poa_exempt =</span> custom_poa)</span></code></pre></div>
+</div>
+</div>
+<div id="understanding-the-results" class="section level2">
+<h2>Understanding the Results</h2>
+<div id="comorbidity-flags" class="section level3">
+<h3>Comorbidity Flags</h3>
+<p>The analysis produces 38 binary flags indicating the presence of
+specific comorbidities:</p>
+<ul>
+<li><strong>CMR_AIDS</strong>: HIV/AIDS</li>
+<li><strong>CMR_ALCOHOL</strong>: Alcohol abuse</li>
+<li><strong>CMR_ANEMDEF</strong>: Deficiency anemia<br />
+</li>
+<li><strong>CMR_AUTOIMMUNE</strong>: Autoimmune conditions</li>
+<li><strong>CMR_CANCER_METS</strong>: Metastatic cancer</li>
+<li><em>… and 33 others</em></li>
+</ul>
+</div>
+<div id="risk-indices" class="section level3">
+<h3>Risk Indices</h3>
+<p>Two risk scores are calculated:</p>
+<ul>
+<li><strong>CMR_Index_Readmission</strong>: Weighted score for
+readmission risk</li>
+<li><strong>CMR_Index_Mortality</strong>: Weighted score for mortality
+risk</li>
+</ul>
+<p>Higher scores indicate higher risk. Scores can be negative due to
+protective factors.</p>
+</div>
+<div id="present-on-admission-poa-logic" class="section level3">
+<h3>Present on Admission (POA) Logic</h3>
+<p>The package handles POA logic automatically:</p>
+<ul>
+<li><strong>POA-neutral conditions</strong>: Always assigned regardless
+of POA indicator</li>
+<li><strong>POA-dependent conditions</strong>: Only assigned if
+POA=‘Y’/‘W’ or code is POA-exempt</li>
+<li><strong>Special cases</strong>: CBVD logic and combination
+codes</li>
+</ul>
+</div>
+</div>
+<div id="advanced-usage-1" class="section level2">
+<h2>Advanced Usage</h2>
+<div id="custom-data-sources-1" class="section level3">
+<h3>Custom Data Sources</h3>
+<p>You can use your own comorbidity lookup files:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="co"># Use custom lookup file</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>custom_comfmt <span class="ot">&lt;-</span> <span class="fu">build_comfmt_from_csv</span>(<span class="st">&quot;path/to/your/lookup.csv&quot;</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a><span class="co"># Use custom POA exempt list  </span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>custom_poa <span class="ot">&lt;-</span> <span class="fu">build_poa_exempt_formats</span>(<span class="st">&quot;path/to/your/poa_exempt.csv&quot;</span>)</span></code></pre></div>
+</div>
+<div id="performance-considerations" class="section level3">
+<h3>Performance Considerations</h3>
+<p>For large datasets, the package automatically optimizes performance
+through:</p>
+<ul>
+<li>Vectorized pattern matching</li>
+<li>Efficient memory management</li>
+<li>Pre-compiled regex patterns</li>
+</ul>
+</div>
+<div id="troubleshooting" class="section level3">
+<h3>Troubleshooting</h3>
+<p>Common issues and solutions:</p>
+<ol style="list-style-type: decimal">
+<li><strong>Missing POA columns</strong>: Set
+<code>poa_cols = NULL</code> and <code>use_poa = FALSE</code></li>
+<li><strong>Wrong year/quarter</strong>: Ensure year/quarter columns
+exist and contain valid values</li>
+<li><strong>ICD code format</strong>: The package normalizes codes
+automatically (removes dots, uppercase)</li>
+</ol>
+</div>
+</div>
+<div id="references" class="section level2">
+<h2>References</h2>
+<ul>
+<li>Healthcare Cost and Utilization Project (HCUP) Elixhauser
+Comorbidity Software</li>
+<li>Agency for Healthcare Research and Quality (AHRQ)</li>
+<li>CMS ICD-10-CM coding guidelines</li>
+</ul>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

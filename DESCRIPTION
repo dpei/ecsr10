@@ -1,0 +1,23 @@
+Package: ecsr10
+Type: Package
+Title: Elixhauser Comorbidity Software Refined for ICD-10-CM
+Version: 0.1.2
+Author: Dong Pei
+Maintainer: Dong Pei <peidong2009@gmail.com>
+Authors@R: person("Dong", "Pei", email = "peidong2009@gmail.com", 
+                  role = c("aut", "cre"))
+Description: An R implementation of the Elixhauser Comorbidity Software Refined 
+    for ICD-10-CM Diagnoses. 
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Depends: R (>= 3.5.0)
+Imports: dplyr, readr, stringr, tidyr, purrr, janitor, magrittr
+Suggests: testthat (>= 3.0.0), knitr, rmarkdown
+Config/testthat/edition: 3
+VignetteBuilder: knitr
+URL: https://github.com/dpei/ecsr10
+BugReports: https://github.com/dpei/ecsr10/issues
+NeedsCompilation: no
+Packaged: 2025-09-28 21:01:55 UTC; dpei
