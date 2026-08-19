@@ -61,6 +61,24 @@ test_that("cmr_index handles empty data", {
   expect_equal(result$CMR_Index_Mortality, c(0, 0))
 })
 
+test_that("cmr_index handles a frame with no rows", {
+  # Distinct from the case above: there the frame has rows but no CMR_ columns.
+  # Here it has the columns and no rows, which the earlier row-loop implementation
+  # could not do -- 1:nrow() on an empty frame is c(1, 0), so it indexed row 1.
+  test_data <- data.frame(
+    patient_id = integer(0),
+    CMR_AIDS = numeric(0),
+    CMR_CANCER_METS = numeric(0),
+    stringsAsFactors = FALSE
+  )
+
+  result <- cmr_index(test_data)
+
+  expect_equal(nrow(result), 0)
+  expect_true("CMR_Index_Readmission" %in% names(result))
+  expect_true("CMR_Index_Mortality" %in% names(result))
+})
+
 test_that("print_cmr_summary works without error", {
   # Create test data
   test_data <- data.frame(

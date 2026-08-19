@@ -1,3 +1,80 @@
+# The AHRQ CMR releases this package can score with, oldest first. The last
+# element is the default. Adding next year's release means appending here and
+# regenerating comfmt_releases - see data-raw/README.md.
+#
+# v2021.1 is deliberately absent: it is structurally different software (two SAS
+# programs rather than three, measures named ARTH/CHF rather than AUTOIMMUNE/HF,
+# six combination targets, no CMR_ output prefix, and no index program at all),
+# and no independent reference exists to validate a translation of it against.
+CMR_RELEASES <- c("2022.1", "2023.1", "2024.1", "2025.1", "2026.1")
+
+#' AHRQ CMR releases supported by this package
+#'
+#' The AHRQ/HCUP "Elixhauser Comorbidity Software Refined for ICD-10-CM" releases
+#' that \code{\link{comorbidity}} and \code{\link{cmr_index}} can score with,
+#' oldest first. Any one of these is valid as their \code{release} argument.
+#'
+#' @return Character vector of release labels, e.g. \code{c("2022.1", ...)}.
+#' @seealso \code{\link{cmr_version}} for the default.
+#' @examples
+#' cmr_releases()
+#' @export
+cmr_releases <- function() {
+  CMR_RELEASES
+}
+
+#' Default AHRQ CMR release
+#'
+#' Returns the release \code{\link{comorbidity}} and \code{\link{cmr_index}} use
+#' when their \code{release} argument is not given - the newest one this package
+#' ships tables for. Pass \code{release =} explicitly to score under an older one;
+#' \code{\link{cmr_releases}} lists the choices.
+#'
+#' This is the analogue of the \code{CMR_VERSION} macro variable the SAS program
+#' stamps onto every output row. It is exposed as a function rather than an output
+#' column, so \code{comorbidity()}'s result schema is unaffected. The release a
+#' particular result was scored under is recorded on it as the \code{cmr_release}
+#' attribute.
+#'
+#' @return Character scalar, e.g. \code{"2026.1"}.
+#' @seealso \code{\link{cmr_releases}}
+#' @examples
+#' cmr_version()
+#' @export
+cmr_version <- function() {
+  CMR_RELEASES[[length(CMR_RELEASES)]]
+}
+
+#' Validate an AHRQ release argument
+#'
+#' Internal. Returns the release unchanged, or errors naming the valid set. A
+#' typo'd release must never fall through to the default, because scoring under
+#' the wrong release fails silently - unmapped codes simply do not flag.
+#' @keywords internal
+.resolve_release <- function(release) {
+  if (!is.character(release) || length(release) != 1L || is.na(release)) {
+    stop("`release` must be a single non-NA character string; one of: ",
+         paste(CMR_RELEASES, collapse = ", "), call. = FALSE)
+  }
+  if (!release %in% CMR_RELEASES) {
+    stop("unsupported AHRQ release \"", release, "\"; must be one of: ",
+         paste(CMR_RELEASES, collapse = ", "), call. = FALSE)
+  }
+  release
+}
+
+#' Newest ICD-10-CM version an AHRQ release covers
+#'
+#' Internal. A release labelled v\emph{Y}.1 covers codes through September of
+#' fiscal year \emph{Y}, and ICD-10-CM version numbering makes that \emph{Y} minus
+#' 1983 (v33 = FY2016 ... v43 = FY2026). Verified against every supported
+#' release's SAS mapping program: each one's \code{ICDVER} ladder is truncated
+#' here and its final \code{ELSE} assigns exactly this value.
+#' @keywords internal
+.release_max_icd_version <- function(release) {
+  as.integer(substr(release, 1L, 4L)) - 1983L
+}
+
 #' Normalize ICD-10-CM codes
 #'
 #' Removes dots, trims spaces, and converts to uppercase for consistent ICD-10-CM code formatting.

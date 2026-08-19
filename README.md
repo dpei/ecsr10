@@ -28,6 +28,35 @@ This package is based on the **Elixhauser Comorbidity Software Refined for ICD-1
 
 **Methodology**: This R package faithfully adapts the Present on Admission (POA) logic and 38 comorbidity conditions as specified in the AHRQ documentation, translating the SAS workflow into R while maintaining the same clinical logic and hierarchical exclusion rules. Compared with the original Elixhauser comorbidity, the number of comorbidity measures in this implementation increases from 29 to 38, with three measures added, five measures modified to create 12 more specific measures, and one measure discontinued. This program uses POA indicators for 18 of the 38 comorbidity measures.
 
+**Implemented releases**: **v2022.1 through v2026.1**, selectable per call. The default is
+**v2026.1** (released October 2025), covering ICD-10-CM diagnosis codes from October 2015 through
+September 2026 — ICD-10-CM versions 33 through 43.
+
+``` r
+cmr_releases()
+#> [1] "2022.1" "2023.1" "2024.1" "2025.1" "2026.1"
+
+cmr_version()   # the default
+#> [1] "2026.1"
+
+# Score under an earlier release - e.g. to reproduce a published cohort
+res <- comorbidity(patient_data, dx_cols, poa_cols, release = "2023.1")
+res <- cmr_index(res, release = "2023.1")
+```
+
+The release selects the diagnosis-code table, the newest ICD-10-CM version reachable from
+year/quarter, and the index weights. It is recorded on the result as the `cmr_release` attribute,
+and `cmr_index()` warns if you index flags from one release with another's weights. Report the
+release alongside any published results — the same patient can flag differently across releases.
+
+Every supported release reproduces AHRQ's own SAS output exactly: 167,322 encounters covering
+81,212 distinct diagnosis codes, all 38 flags and both index scores, zero differing cells. See
+`simulation/ahrq_releases/`.
+
+v2021.1 is not supported. It is structurally different software — measures named `ARTH`/`CHF`
+rather than `AUTOIMMUNE`/`HF`, no `CMR_` output prefix, and no index program at all (AHRQ: the
+Indices "are not available until v2022.1").
+
 ## Installation
 
 You can install the development version of ecsr10 from GitHub:
@@ -56,6 +85,27 @@ library(ecsr10)
 # Calculate risk indices
 # result_with_indices <- cmr_index(result)
 ```
+
+### Parallel execution
+
+`comorbidity()` accepts `ncores` (default `1`), which splits the encounters into
+that many contiguous blocks and runs the whole pipeline — reshape, pattern
+matching, POA rules, matrix build — on each block in a forked worker. Results are
+identical for every `ncores` value.
+
+``` r
+# result <- comorbidity(patient_data, dx_cols = ..., poa_cols = ..., ncores = 4)
+```
+
+Each worker materializes its own long-format intermediate, so peak memory grows
+with `ncores`. On large inputs that, rather than core count, is usually what limits
+how high you can set it.
+
+Values above `parallel::detectCores()` are clamped with a warning. Forking is
+unavailable on Windows, where any `ncores > 1` falls back to serial with a warning.
+
+To measure `ncores` on your own hardware and data, use
+`simulation/large_data/benchmark_ncores.R`.
 
 ## Data Requirements
 

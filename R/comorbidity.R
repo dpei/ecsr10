@@ -9,12 +9,34 @@
 #' @param poa_cols Character vector of column names containing POA indicators (optional)
 #' @param year_col Character, name of column containing year information (default "year")
 #' @param quarter_col Character, name of column containing quarter information (default "quarter")
+#' @param release Character, which AHRQ CMR release to score with (default
+#'   \code{cmr_version()}, the newest available). See \code{\link{cmr_releases}}
+#'   for the supported set. The release selects the diagnosis-code table, the
+#'   newest ICD-10-CM version reachable from year/quarter, and - via
+#'   \code{\link{cmr_index}} - the index weights. It is recorded on the result as
+#'   the \code{cmr_release} attribute. An explicit \code{comfmt} overrides only
+#'   the code table; the release's ICD-version cap still applies.
 #' @param comfmt Data frame with comorbidity format containing "target" and "pattern" columns.
-#'   If NULL (default), uses the built-in comfmt_lookup data.
+#'   If NULL (default), uses the built-in table for \code{release}.
 #' @param poa_exempt Named list of POA exempt codes by version. If NULL (default),
 #'   uses the built-in poaxmpt_codes_long data when use_poa is TRUE.
 #' @param use_poa Logical, whether to apply POA logic (default TRUE)
 #' @param wildcard_mode Character, pattern matching mode ("wildcard" or "regex")
+#' @param ncores Integer, number of forked workers the encounters are split across
+#'   (default 1, i.e. serial). The input is divided into \code{ncores} contiguous
+#'   blocks of rows and the whole pipeline runs on each block independently.
+#'   Values above \code{parallel::detectCores()} are clamped with a warning.
+#'   Forking is unavailable on Windows, where any value above 1 falls back to
+#'   serial with a warning.
+#'
+#'   Results are identical for every \code{ncores} value. Every stage is
+#'   per-encounter, and overlapping lookup patterns are resolved by the pattern's
+#'   index in \code{comfmt}, which is the same in every block - so a block's
+#'   code-to-target map is an exact restriction of the whole-dataset one.
+#'
+#'   Peak memory grows with \code{ncores} - each worker materializes its own
+#'   long-format intermediate - so memory, not core count, is usually the
+#'   binding constraint on large inputs.
 #' @return Data frame with original patient diagnosis data plus 38 CMR comorbidity flags
 #' @details
 #' The function identifies 38 comorbidity categories:
@@ -70,9 +92,15 @@
 #' 
 #' # Advanced workflow with custom lookup data
 #' custom_comfmt <- build_comfmt_from_csv("path/to/custom_lookup.csv")
-#' result <- comorbidity(patient_data, 
+#' result <- comorbidity(patient_data,
 #'                       dx_cols = c("dx2", "dx3", "dx4"),
 #'                       comfmt = custom_comfmt)
+#'
+#' # Split the encounters across 4 forked workers
+#' result <- comorbidity(patient_data,
+#'                       dx_cols = c("dx2", "dx3", "dx4"),
+#'                       poa_cols = c("poa2", "poa3", "poa4"),
+#'                       ncores = 4)
 #' }
 #' @export
 comorbidity <- function(patient_data,
@@ -80,36 +108,40 @@ comorbidity <- function(patient_data,
                         poa_cols = NULL,
                         year_col = "year",
                         quarter_col = "quarter",
+                        release = cmr_version(),
                         comfmt = NULL,
                         poa_exempt = NULL,
                         use_poa = TRUE,
-                        wildcard_mode = "wildcard") {
-  
+                        wildcard_mode = "wildcard",
+                        ncores = 1) {
+
   # Input validation
   stopifnot(all(dx_cols %in% names(patient_data)))
   if (!is.null(poa_cols)) stopifnot(length(poa_cols) == length(dx_cols))
-  
-  # Use default lookup data if not provided
+  release <- .resolve_release(release)
+  ncores <- .resolve_ncores(ncores)
+
+  # Use default lookup data if not provided.
+  #
+  # Built here in the parent, BEFORE any fork, so that a chunked run builds the
+  # tables once rather than once per worker; the workers inherit the finished
+  # tables through the fork. They are also memoised per release, so looping over
+  # releases - or calling comorbidity() repeatedly - reparses nothing.
+  #
+  # The cache must be populated here and the tables passed down as arguments. A
+  # fork child's writes are discarded when it exits, so a worker that reached
+  # into the cache itself would silently rebuild the tables once per worker.
   if (is.null(comfmt)) {
-    # Load built-in comorbidity lookup data
-    data("comfmt_lookup", package = "ecsr10", envir = environment())
-    # Create temporary file for processing
-    temp_comfmt_file <- tempfile(fileext = ".csv")
-    readr::write_csv(comfmt_lookup, temp_comfmt_file)
-    comfmt <- build_comfmt_from_csv(temp_comfmt_file, mode = wildcard_mode)
-    unlink(temp_comfmt_file)
+    comfmt <- .comfmt_for_release(release)
   }
-  
+
+  # Fails loudly on a target the pipeline would otherwise drop in silence.
+  .validate_comfmt_targets(comfmt, release)
+
   if (use_poa && is.null(poa_exempt)) {
-    # Load built-in POA exempt data
-    data("poaxmpt_codes_long", package = "ecsr10", envir = environment())
-    # Create temporary file for processing  
-    temp_poa_file <- tempfile(fileext = ".csv")
-    readr::write_csv(poaxmpt_codes_long, temp_poa_file)
-    poa_exempt <- build_poa_exempt_formats(temp_poa_file)
-    unlink(temp_poa_file)
+    poa_exempt <- .poa_exempt_default()
   }
-  
+
   if (use_poa && !is.null(poa_exempt)) {
     if (!year_col %in% names(patient_data)) {
       stop(paste("Year column", year_col, "not found in patient diagnosis data"))
@@ -120,7 +152,72 @@ comorbidity <- function(patient_data,
   }
   
   n_rows <- nrow(patient_data)
-  
+
+  # The release's ICD-10-CM ceiling. Encounters dated past the release's coverage
+  # clamp to it, exactly as the release's own SAS ladder does.
+  max_icd_version <- .release_max_icd_version(release)
+
+  # Chunks cannot outnumber rows. This is a validity guard, not a performance
+  # threshold - ncores is honoured as requested on frames of any size.
+  chunks <- min(ncores, max(n_rows, 1L))
+
+  if (chunks > 1L) {
+    row_blocks <- split(seq_len(n_rows), cut(seq_len(n_rows), chunks, labels = FALSE))
+    pieces <- parallel::mclapply(row_blocks, function(rows) {
+      .comorbidity_flags(patient_data[rows, , drop = FALSE], dx_cols, poa_cols,
+                         year_col, quarter_col, comfmt, poa_exempt, use_poa,
+                         wildcard_mode, max_icd_version)
+    }, mc.cores = chunks)
+
+    # mclapply reports worker errors as try-error elements instead of raising them.
+    # Without this check a failed worker would silently contribute a block of 0
+    # flags for its encounters rather than an error.
+    failed <- vapply(pieces, inherits, logical(1), "try-error")
+    if (any(failed)) {
+      stop("parallel chunk processing failed on ", sum(failed), " of ", length(pieces),
+           " chunk(s): ",
+           conditionMessage(attr(pieces[[which(failed)[1]]], "condition")), call. = FALSE)
+    }
+
+    result_matrix <- do.call(rbind, pieces)
+  } else {
+    result_matrix <- .comorbidity_flags(patient_data, dx_cols, poa_cols, year_col,
+                                        quarter_col, comfmt, poa_exempt, use_poa,
+                                        wildcard_mode, max_icd_version)
+  }
+
+  # Convert matrix to data frame and bind to original data
+  out <- dplyr::bind_cols(patient_data, as.data.frame(result_matrix))
+
+  # Record the release as an attribute rather than a column, so the result schema
+  # is unchanged and readr::write_csv() ignores it. cmr_index() reads it to warn
+  # about a release mismatch; it never uses it as a default, since `[`-subsetting
+  # a data frame drops attributes and silent action at a distance would be worse
+  # than the mismatch it was meant to catch.
+  attr(out, "cmr_release") <- release
+  out
+}
+
+#' Run the comorbidity pipeline over one block of encounters
+#'
+#' Internal. Takes lookup tables that are already built and returns only the
+#' 38-column CMR flag matrix, one row per row of \code{patient_data} - not the
+#' input columns bound back on, which would make every worker ship the caller's
+#' whole frame back through a pipe.
+#'
+#' Every stage below is per-encounter: \code{row_id} is a row number over the
+#' frame passed in and \code{n_rows} is its row count, so both are local to the
+#' block. Running this on a contiguous block therefore produces exactly the rows
+#' the whole-dataset call would have produced, which is what makes the chunked
+#' path in \code{comorbidity()} identical to the serial one rather than merely
+#' similar.
+#' @keywords internal
+.comorbidity_flags <- function(patient_data, dx_cols, poa_cols, year_col,
+                               quarter_col, comfmt, poa_exempt, use_poa,
+                               wildcard_mode, max_icd_version = 43L) {
+
+  n_rows <- nrow(patient_data)
+
   # Pre-compile regex patterns (major optimization)
   if (wildcard_mode == "wildcard") {
     comfmt_compiled <- comfmt %>%
@@ -140,10 +237,25 @@ comorbidity <- function(patient_data,
     claims_prep <- claims_prep %>%
       dplyr::mutate(
         icd_version = determine_icd_version(
-          as.integer(.data[[year_col]]), 
-          as.integer(.data[[quarter_col]])
+          as.integer(.data[[year_col]]),
+          as.integer(.data[[quarter_col]]),
+          max_icd_version
         )
       )
+
+    # Every ICD version reached must have a POA-exempt list, or the left_join
+    # below yields is_exempt = NA -> FALSE for its rows. That failure is silent
+    # and moves flags in BOTH directions: POA-dependent targets lose their
+    # exempt-code assignments, and .handle_special_cases() starts firing
+    # CBVD_NPOA on rows it never should, which suppresses CMR_CBVD. The built-in
+    # data covers v33-v43, so only a user-supplied poa_exempt can trip this.
+    have <- as.integer(stringr::str_extract(names(poa_exempt), "\\d+"))
+    missing_v <- setdiff(unique(claims_prep$icd_version), have)
+    if (length(missing_v)) {
+      stop("poa_exempt has no code list for ICD-10-CM version(s) ",
+           paste(sort(missing_v), collapse = ", "),
+           "; it covers ", paste(sort(have), collapse = ", "), call. = FALSE)
+    }
   }
   
   # OPTIMIZATION 1: Reshape to long format once (instead of processing row by row)
@@ -177,7 +289,25 @@ comorbidity <- function(patient_data,
         poa_code = toupper(as.character(poa_code))
       ) %>%
       dplyr::select(row_id, poa_position_num, poa_code)
-    
+
+    # dx and POA columns are paired by the digits in their NAMES, not by
+    # position in the vectors, and str_extract() takes the FIRST run of digits.
+    # So HCUP's own naming - I10_DX2 paired with DXPOA2 - yields positions 10 and
+    # 2, which join to nothing: every POA lookup misses, coalesces to "", and
+    # every POA-dependent target silently stops flagging on non-exempt codes.
+    # An empty intersection is never legitimate, so fail loudly instead.
+    dx_pos  <- unique(stats::na.omit(dx_long$dx_position_num))
+    poa_pos <- unique(stats::na.omit(poa_long$poa_position_num))
+    if (length(dx_pos) && length(poa_pos) && !length(intersect(dx_pos, poa_pos))) {
+      stop("no dx/POA column pairs: dx columns give position(s) ",
+           paste(sort(dx_pos), collapse = ", "), " but POA columns give ",
+           paste(sort(poa_pos), collapse = ", "), ".\n",
+           "  Columns are paired by the first run of digits in their names, so ",
+           "names like \"I10_DX2\" resolve to 10, not 2.\n",
+           "  Rename to a form whose only digits are the position, e.g. dx2/poa2.",
+           call. = FALSE)
+    }
+
     dx_long <- dx_long %>%
       dplyr::left_join(poa_long, by = c("row_id", "dx_position_num" = "poa_position_num")) %>%
       dplyr::mutate(poa_code = dplyr::coalesce(poa_code, ""))
@@ -187,25 +317,39 @@ comorbidity <- function(patient_data,
   
   # OPTIMIZATION 2: Vectorized pattern matching
   unique_codes <- unique(dx_long$dx_code)
-  
-  # Create mapping of codes to targets efficiently
-  code_target_map <- dplyr::tibble()
-  
-  for (i in seq_len(nrow(comfmt_compiled))) {
-    matching_codes <- unique_codes[stringr::str_detect(unique_codes, regex_list[[i]])]
-    
-    if (length(matching_codes) > 0) {
-      code_target_map <- dplyr::bind_rows(
-        code_target_map,
-        dplyr::tibble(
-          dx_code = matching_codes,
-          target = comfmt_compiled$target[i],
-          priority = i  # for handling overlapping patterns
-        )
+
+  # Create mapping of codes to targets efficiently.
+  #
+  # `priority` is the pattern's index in comfmt, which is what resolves overlapping
+  # patterns below. Because that index is a property of the lookup table rather than
+  # of the data, every chunk resolves an overlap the same way, and a chunk's map is
+  # an exact restriction of the whole-dataset map to the codes the chunk contains.
+  # That is what makes the ncores > 1 result identical to the serial one rather than
+  # merely similar.
+  match_block <- function(idx) {
+    purrr::map_dfr(idx, function(i) {
+      matching_codes <- unique_codes[stringr::str_detect(unique_codes, regex_list[[i]])]
+      if (length(matching_codes) == 0L) return(NULL)
+      dplyr::tibble(
+        dx_code = matching_codes,
+        target = comfmt_compiled$target[i],
+        priority = i  # for handling overlapping patterns
       )
-    }
+    })
   }
-  
+
+  n_patterns <- nrow(comfmt_compiled)
+
+  code_target_map <- match_block(seq_len(n_patterns))
+
+  # A code set that matches nothing yields a 0-column frame, which the arrange() below
+  # cannot resolve columns against. Give it the schema explicitly.
+  if (nrow(code_target_map) == 0L) {
+    code_target_map <- dplyr::tibble(
+      dx_code = character(), target = character(), priority = integer()
+    )
+  }
+
   # Handle overlapping patterns by keeping first match per code
   code_target_map <- code_target_map %>%
     dplyr::arrange(dx_code, priority) %>%
@@ -236,30 +380,48 @@ comorbidity <- function(patient_data,
     dx_with_targets$is_exempt <- FALSE
   }
   
-  # Apply business rules and build result matrix
-  result_matrix <- .apply_comorbidity_rules(dx_with_targets, n_rows, use_poa)
-  
-  # Convert matrix to data frame and bind to original data
-  result_df <- as.data.frame(result_matrix)
-  dplyr::bind_cols(patient_data, result_df)
+  # Apply business rules and build the flag matrix for this block
+  .apply_comorbidity_rules(dx_with_targets, n_rows, use_poa)
+}
+
+#' Validate and clamp a requested core count
+#'
+#' Internal helper. Returns a usable positive integer core count, warning rather
+#' than erroring when the request is merely unsatisfiable (too many cores, or
+#' Windows, where \code{parallel::mclapply} cannot fork).
+#' @keywords internal
+.resolve_ncores <- function(ncores) {
+  ncores <- suppressWarnings(as.integer(ncores))
+  if (length(ncores) != 1L || is.na(ncores) || ncores < 1L) {
+    stop("ncores must be a single positive integer", call. = FALSE)
+  }
+
+  available <- parallel::detectCores(logical = TRUE)
+  if (!is.na(available) && ncores > available) {
+    warning("ncores = ", ncores, " exceeds the ", available,
+            " available core(s); using ", available, call. = FALSE)
+    ncores <- as.integer(available)
+  }
+
+  if (ncores > 1L && .Platform$OS.type == "windows") {
+    warning("parallel::mclapply cannot fork on Windows; running serially (ncores = 1)",
+            call. = FALSE)
+    ncores <- 1L
+  }
+
+  ncores
 }
 
 #' Internal function to apply comorbidity business rules
 #' @keywords internal
 .apply_comorbidity_rules <- function(dx_with_targets, n_rows, use_poa) {
   
-  # Define comorbidity categories
-  poa_neutral <- c("AIDS", "ALCOHOL", "AUTOIMMUNE", "LUNG_CHRONIC", "DEMENTIA", 
-                   "DEPRESS", "DIAB_UNCX", "DIAB_CX", "DRUG_ABUSE", "HTN_UNCX", 
-                   "HTN_CX", "THYROID_HYPO", "THYROID_OTH", "CANCER_LYMPH", 
-                   "CANCER_LEUK", "CANCER_METS", "OBESE", "PERIVASC", 
-                   "CANCER_SOLID", "CANCER_NSITU")
-  
-  poa_dependent <- c("ANEMDEF", "BLDLOSS", "HF", "COAG", "LIVER_MLD", "LIVER_SEV",
-                     "NEURO_MOVT", "NEURO_SEIZ", "NEURO_OTH", "PARALYSIS", "PSYCHOSES",
-                     "PULMCIRC", "RENLFL_MOD", "RENLFL_SEV", "ULCER_PEPTIC", "WGHTLOSS",
-                     "CBVD_POA", "CBVD_SQLA", "VALVE")
-  
+  # Comorbidity categories - see R/releases.R for the vectors and why they are
+  # deliberately not release-aware.
+  poa_neutral   <- CMR_POA_NEUTRAL
+  poa_dependent <- CMR_POA_DEPENDENT
+
+
   # Apply assignment rules
   valid_assignments <- dx_with_targets %>%
     dplyr::mutate(
@@ -310,10 +472,9 @@ comorbidity <- function(patient_data,
   
   if (nrow(dx_with_targets) == 0) return(combination_assignments)
   
-  combo_codes <- c("DRUG_ABUSEPSYCHOSES", "HFHTN_CX", "HTN_CXRENLFL_SEV", 
-                   "HFHTN_CXRENLFL_SEV", "ALCOHOLLIVER_MLD", "VALVE_AUTOIMMUNE", 
-                   "CBVD_SQLAPARALYSIS", "LIVER_MLD_NEURO", "NEURO_OTH_SEIZ")
-  
+  combo_codes <- CMR_COMBO_TARGETS
+
+
   combo_data <- dx_with_targets %>% dplyr::filter(target %in% combo_codes)
   
   if (nrow(combo_data) == 0) return(combination_assignments)
@@ -399,6 +560,14 @@ comorbidity <- function(patient_data,
         combination_assignments <- dplyr::bind_rows(combination_assignments,
           row_data %>% dplyr::mutate(target = "NEURO_OTH", should_assign = TRUE),
           row_data %>% dplyr::mutate(target = "NEURO_SEIZ", should_assign = TRUE))
+      }
+    }
+
+    if (target == "LIVER_MLD_PULMCIRC") {
+      if (use_poa && (row_data$is_exempt | row_data$poa_code %in% c("Y", "W"))) {
+        combination_assignments <- dplyr::bind_rows(combination_assignments,
+          row_data %>% dplyr::mutate(target = "LIVER_MLD", should_assign = TRUE),
+          row_data %>% dplyr::mutate(target = "PULMCIRC", should_assign = TRUE))
       }
     }
   }

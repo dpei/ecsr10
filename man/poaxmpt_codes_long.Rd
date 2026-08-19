@@ -5,9 +5,9 @@
 \alias{poaxmpt_codes_long}
 \title{Present on Admission (POA) Exempt Codes}
 \format{
-A data frame with 2 columns and 371493 rows:
+A data frame with 2 columns and 409843 rows:
 \describe{
-  \item{version}{Integer. ICD-10-CM version number (33-42) indicating the 
+  \item{version}{Integer. ICD-10-CM version number (33-43) indicating the
                 ICD-10-CM annual update version}
   \item{code}{Character. Normalized ICD-10-CM diagnosis code without dots or spaces,
              in uppercase format (e.g., "E119", "I10")}
@@ -38,10 +38,13 @@ POA exempt codes include conditions that:
 Version mapping follows CMS guidelines:
 \itemize{
   \item Version 33: 2015 Q4 - 2016 Q3
-  \item Version 34: 2016 Q4 - 2017 Q3  
+  \item Version 34: 2016 Q4 - 2017 Q3
   \item ...continuing through...
   \item Version 42: 2024 Q4 - 2025 Q3
+  \item Version 43: 2025 Q4 - 2026 Q3
 }
+
+Derived from AHRQ CMR v2026.1 - see \code{\link{cmr_version}}.
 }
 \examples{
 data(poaxmpt_codes_long)
@@ -50,8 +53,8 @@ head(poaxmpt_codes_long)
 # View codes by version
 table(poaxmpt_codes_long$version)
 
-# Get POA exempt codes for version 42 (current)
-v42_codes <- poaxmpt_codes_long[poaxmpt_codes_long$version == 42, ]
-length(unique(v42_codes$code))
+# Get POA exempt codes for version 43 (current)
+v43_codes <- poaxmpt_codes_long[poaxmpt_codes_long$version == 43, ]
+length(unique(v43_codes$code))
 }
 \keyword{datasets}

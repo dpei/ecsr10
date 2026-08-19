@@ -4,19 +4,37 @@
 \alias{determine_icd_version}
 \title{Determine ICD version based on year and quarter}
 \usage{
-determine_icd_version(year, quarter)
+determine_icd_version(year, quarter, max_version = 43L)
 }
 \arguments{
 \item{year}{Integer vector of years}
 
 \item{quarter}{Integer vector of quarters (1-4)}
+
+\item{max_version}{Integer, newest ICD-10-CM version the AHRQ release covers.
+Defaults to 43, the newest release's cap.}
 }
 \value{
 Integer vector of ICD-10-CM version numbers
 }
 \description{
-Internal function that maps year and quarter combinations to ICD-10-CM version 
-numbers following the standard CMS versioning timeline. This function is used 
+Internal function that maps year and quarter combinations to ICD-10-CM version
+numbers following the standard CMS versioning timeline. This function is used
 internally by the comorbidity() function.
+}
+\details{
+Versions roll over at the Q4 fiscal-year boundary, so version 43 covers
+2025 Q4 through 2026 Q3. Following the SAS program, anything outside the
+mapped range - pre-2015 dates and any future year - falls back to the newest
+version the selected AHRQ release covers.
+
+\code{max_version} makes the ladder release-aware. Each AHRQ release ships a
+ladder truncated at the newest ICD-10-CM version it covers, with its final
+\code{ELSE} assigning that version; v2022.1 tops out at 39, v2026.1 at 43.
+Capping the full ladder with \code{pmin} reproduces that truncation exactly,
+because a truncated ladder assigns the full ladder's value wherever it has a
+branch and the maximum everywhere else - and everything it lacks a branch for
+is either pre-2015 (full ladder gives 0) or beyond the release's coverage
+(full ladder gives something larger than the cap).
 }
 \keyword{internal}

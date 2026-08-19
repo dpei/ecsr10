@@ -5,13 +5,18 @@
 #'
 #' The ecsr10 package provides an R implementation of the Elixhauser Comorbidity 
 #' Software Refined (CMR) workflow for analyzing ICD-10-CM diagnosis codes and 
-#' calculating comorbidity indices. It processes patient diagnosis data to identify 
+#' calculating comorbidity indices. It processes patient diagnosis data to identify
 #' 38 specific comorbidity categories and calculate mortality/readmission risk indices.
+#'
+#' It reproduces AHRQ/HCUP release v2026.1, covering ICD-10-CM diagnosis codes
+#' from October 2015 through September 2026 (ICD-10-CM versions 33-43). Call
+#' \code{\link{cmr_version}} to query this at runtime.
 #'
 #' @section Main functions:
 #' \itemize{
 #'   \item \code{\link{comorbidity}}: Apply comorbidity analysis to patient diagnosis data
 #'   \item \code{\link{cmr_index}}: Calculate mortality and readmission risk indices
+#'   \item \code{\link{cmr_version}}: The AHRQ CMR release this package implements
 #' }
 #'
 #' @section Key features:
@@ -58,6 +63,7 @@
 #' @importFrom tidyr pivot_longer pivot_wider
 #' @importFrom purrr map map_dfr discard
 #' @importFrom janitor clean_names
+#' @importFrom parallel mclapply detectCores
 #' @importFrom stats quantile sd
 #' @importFrom utils data
 #' @importFrom magrittr "%>%"
@@ -74,5 +80,6 @@ utils::globalVariables(c(
   ".data", "cmr_target", "code", "col_idx", "dx_code", "dx_position", 
   "flag", "is_exempt", "pattern", "poa_code", "poa_position", 
   "poa_position_num", "priority", "row_id", "row_idx", "should_assign", 
-  "target", "version_max", "version_min", "comfmt_lookup", "poaxmpt_codes_long"
+  "target", "version_max", "version_min", "comfmt_lookup", "poaxmpt_codes_long",
+  "comfmt_releases"
 ))

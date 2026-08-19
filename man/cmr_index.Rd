@@ -4,10 +4,15 @@
 \alias{cmr_index}
 \title{Calculate CMR mortality and readmission indices}
 \usage{
-cmr_index(core_data)
+cmr_index(core_data, release = cmr_version())
 }
 \arguments{
 \item{core_data}{Data frame with comorbidity flags (output from comorbidity function)}
+
+\item{release}{Character, which AHRQ CMR release's weights to apply (default
+\code{cmr_version()}). See \code{\link{cmr_releases}}. If \code{core_data}
+carries a \code{cmr_release} attribute - which \code{\link{comorbidity}}
+sets - and it differs from \code{release}, a warning is issued.}
 }
 \value{
 Data frame with two additional columns: CMR_Index_Readmission and CMR_Index_Mortality
@@ -19,9 +24,15 @@ the 38 CMR comorbidity flags. Uses established weights from the CMR methodology.
 \details{
 The function applies validated weights to each comorbidity category:
 \itemize{
-  \item Readmission weights range from -2 (obesity) to 11 (metastatic cancer)
+  \item Readmission weights range from -2 (obesity) to 11 (metastatic cancer),
+    and are identical across every supported release
   \item Mortality weights range from -9 (psychoses) to 22 (metastatic cancer, neurological disorders)
-  \item Missing comorbidity flags are treated as 0
+  \item Mortality weights differ between v2022.1 and later releases on ten
+    categories; all releases from v2023.1 onward agree
+  \item Comorbidity columns absent from \code{core_data} are skipped rather than
+    treated as an error, so a partially flagged frame yields a partial score
+  \item \code{NA} flags contribute 0
+  \item A zero-row frame returns zero rows with both index columns present
   \item Final scores are unweighted sums of individual comorbidity contributions
 }
 }

@@ -5,12 +5,14 @@
 \alias{comfmt_lookup}
 \title{ICD-10-CM to Comorbidity Mapping Data}
 \format{
-A data frame with 2 columns and 4542 rows:
+A data frame with 2 columns and 4567 rows:
 \describe{
-  \item{code}{Character. ICD-10-CM diagnosis code patterns using SQL-style wildcards 
+  \item{code}{Character. ICD-10-CM diagnosis code patterns using SQL-style wildcards
             for pattern matching. Examples: "E11\%", "I10", "N18\%"}
-  \item{comorbidity}{Character. The target comorbidity category name. One of 38 categories
-                    including AIDS, ALCOHOL, ANEMDEF, AUTOIMMUNE, BLDLOSS, etc.}
+  \item{comorbidity}{Character. The target comorbidity category name. One of 49
+                    lookup targets - the 38 output categories plus the combination
+                    targets (e.g. HFHTN_CX, LIVER_MLD_PULMCIRC) that fan out into
+                    several of them.}
 }
 }
 \source{
@@ -30,11 +32,19 @@ diagnosis codes correspond to specific comorbidity conditions.
 The mapping follows the Elixhauser Comorbidity Software Refined methodology and includes:
 \itemize{
   \item 38 distinct comorbidity categories
-  \item Wildcard patterns using % for flexible code matching  
+  \item Wildcard patterns using % for flexible code matching
   \item Updated codes reflecting current ICD-10-CM versions
   \item Both primary and secondary diagnosis code patterns
   \item Special combination codes for complex conditions
 }
+
+This is the default release's view of \code{\link{comfmt_releases}}, kept as a
+separate object for backwards compatibility. It is exactly the
+\code{release == cmr_version()} slice, and both objects are written by the same
+parse so they cannot drift. To score with a different AHRQ release, pass
+\code{release =} to \code{\link{comorbidity}} rather than subsetting this.
+
+Derived from AHRQ CMR v2026.1 - see \code{\link{cmr_version}}.
 
 Key comorbidity categories include:
 \itemize{

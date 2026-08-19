@@ -1,16 +1,40 @@
+# Mortality weights that differ from the v2023.1-onward baseline encoded in
+# cmr_index(). Extracted from each release's CMR_Index_Program_*.sas: readmission
+# weights are identical across all supported releases, and the only mortality
+# change AHRQ has made in this range is v2022.1 -> v2023.1, on these ten
+# categories. Storing the delta rather than five full 38-entry tables keeps the
+# reviewable surface at ten numbers.
+CMR_MORTALITY_OVERRIDES <- list(
+  "2022.1" = c(
+    CMR_AUTOIMMUNE = -1, CMR_CANCER_LYMPH = 6, CMR_CANCER_METS = 23,
+    CMR_COAG = 15, CMR_DEPRESS = -9, CMR_HF = 15, CMR_LIVER_SEV = 17,
+    CMR_NEURO_OTH = 23, CMR_RENLFL_SEV = 8, CMR_WGHTLOSS = 14
+  )
+)
+
 #' Calculate CMR mortality and readmission indices
 #'
 #' Calculates weighted risk scores for hospital readmission and mortality based on 
 #' the 38 CMR comorbidity flags. Uses established weights from the CMR methodology.
 #'
 #' @param core_data Data frame with comorbidity flags (output from comorbidity function)
+#' @param release Character, which AHRQ CMR release's weights to apply (default
+#'   \code{cmr_version()}). See \code{\link{cmr_releases}}. If \code{core_data}
+#'   carries a \code{cmr_release} attribute - which \code{\link{comorbidity}}
+#'   sets - and it differs from \code{release}, a warning is issued.
 #' @return Data frame with two additional columns: CMR_Index_Readmission and CMR_Index_Mortality
 #' @details
 #' The function applies validated weights to each comorbidity category:
 #' \itemize{
-#'   \item Readmission weights range from -2 (obesity) to 11 (metastatic cancer)
+#'   \item Readmission weights range from -2 (obesity) to 11 (metastatic cancer),
+#'     and are identical across every supported release
 #'   \item Mortality weights range from -9 (psychoses) to 22 (metastatic cancer, neurological disorders)
-#'   \item Missing comorbidity flags are treated as 0
+#'   \item Mortality weights differ between v2022.1 and later releases on ten
+#'     categories; all releases from v2023.1 onward agree
+#'   \item Comorbidity columns absent from \code{core_data} are skipped rather than
+#'     treated as an error, so a partially flagged frame yields a partial score
+#'   \item \code{NA} flags contribute 0
+#'   \item A zero-row frame returns zero rows with both index columns present
 #'   \item Final scores are unweighted sums of individual comorbidity contributions
 #' }
 #' @examples
@@ -24,10 +48,24 @@
 #' summary(result_with_indices$CMR_Index_Mortality)
 #' }
 #' @export
-cmr_index <- function(core_data) {
-  
+cmr_index <- function(core_data, release = cmr_version()) {
+
+  release <- .resolve_release(release)
+
+  # Scoring flags from one release with another's weights is legal - the caller
+  # may genuinely want it - but it is almost always a mistake, so it is surfaced.
+  # Deliberately a warning and not a silent default: `[`-subsetting a data frame
+  # drops attributes, so defaulting off the attribute would make behaviour depend
+  # on whether the frame had been touched in between.
+  scored_under <- attr(core_data, "cmr_release")
+  if (!is.null(scored_under) && !identical(scored_under, release)) {
+    warning("flags were scored under AHRQ release ", scored_under,
+            " but are being indexed with ", release, " weights; ",
+            "pass release = \"", scored_under, "\" to match", call. = FALSE)
+  }
+
   result_data <- core_data
-  
+
   # Define readmission weights
   rw <- list(
     CMR_AIDS = 5, CMR_ALCOHOL = 3, CMR_ANEMDEF = 5, CMR_AUTOIMMUNE = 2,
@@ -59,29 +97,41 @@ cmr_index <- function(core_data) {
     CMR_RENLFL_SEV = 7, CMR_THYROID_HYPO = -3, CMR_THYROID_OTH = -8,
     CMR_ULCER_PEPTIC = 0, CMR_VALVE = 0, CMR_WGHTLOSS = 13
   )
-  
-  # Calculate indices for each record
-  result_data$CMR_Index_Readmission <- 0
-  result_data$CMR_Index_Mortality <- 0
-  
-  for (i in 1:nrow(result_data)) {
-    readmit_score <- 0
-    mort_score <- 0
-    
-    for (cmr_var in names(rw)) {
-      if (cmr_var %in% names(result_data)) {
-        cmr_value <- result_data[[cmr_var]][i]
-        if (!is.na(cmr_value)) {
-          readmit_score <- readmit_score + (cmr_value * rw[[cmr_var]])
-          mort_score <- mort_score + (cmr_value * mw[[cmr_var]])
-        }
-      }
-    }
-    
-    result_data$CMR_Index_Readmission[i] <- readmit_score
-    result_data$CMR_Index_Mortality[i] <- mort_score
+
+  # Per-release mortality overrides. The lists above are the v2023.1-onward
+  # weights, which every release from 2023.1 to 2026.1 shares; only v2022.1
+  # differs, on these ten categories. Readmission weights have never changed.
+  # Both facts are re-derived from the AHRQ CMR_Index_Program_*.sas files by
+  # data-raw/checks.R rather than taken on trust.
+  if (release %in% names(CMR_MORTALITY_OVERRIDES)) {
+    ov <- CMR_MORTALITY_OVERRIDES[[release]]
+    mw[names(ov)] <- as.list(ov)
   }
-  
+
+
+  # Calculate indices for every record at once. Categories the frame does not carry
+  # are dropped here rather than tested per row, which is what keeps a partially
+  # flagged frame scoring instead of erroring.
+  present <- intersect(names(rw), names(result_data))
+  n <- nrow(result_data)
+
+  readmit <- numeric(n)
+  mort <- numeric(n)
+
+  # One vectorised pass per category rather than a cell-by-cell loop over rows. Two
+  # n-length accumulators is the whole footprint: building a matrix over the 38 flag
+  # columns instead would allocate a second copy of the flags, which matters on the
+  # large frames this is fast enough to be used on.
+  for (cmr_var in present) {
+    x <- as.numeric(result_data[[cmr_var]])
+    x[is.na(x)] <- 0  # a missing flag contributes nothing to either score
+    readmit <- readmit + (x * rw[[cmr_var]])
+    mort <- mort + (x * mw[[cmr_var]])
+  }
+
+  result_data$CMR_Index_Readmission <- readmit
+  result_data$CMR_Index_Mortality <- mort
+
   return(result_data)
 }
 

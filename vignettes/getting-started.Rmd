@@ -25,6 +25,8 @@ knitr::opts_chunk$set(
 
 The `ecsr10` package provides an R implementation of the Elixhauser Comorbidity Software Refined (CMR) workflow for analyzing ICD-10-CM diagnosis codes and calculating comorbidity indices. This package is designed for healthcare researchers and data analysts who need to identify comorbidities and calculate risk scores from patient diagnosis data.
 
+It implements AHRQ/HCUP releases **v2022.1 through v2026.1**, selectable per call. The default, `cmr_version()`, is v2026.1, covering ICD-10-CM diagnosis codes from October 2015 through September 2026 (ICD-10-CM versions 33–43). Record the release alongside any published results: the same patient can flag differently across releases, and reproducing an existing cohort means scoring it under the release it was built with.
+
 ## Installation
 
 Install the development version from GitHub:
@@ -37,6 +39,9 @@ devtools::install_github("dpei/ecsr10")
 ```{r setup}
 library(ecsr10)
 library(dplyr)
+
+cmr_releases()   # every release this package can score with
+cmr_version()    # the one used when you don't say
 ```
 
 ## Basic Workflow
@@ -93,9 +98,75 @@ head(result_with_indices[,c("encounter_id", "CMR_Index_Readmission", "CMR_Index_
 
 That's it! The package handles all the complex lookup building internally.
 
+### Using multiple cores
+
+`comorbidity()` takes an `ncores` argument (default `1`) that splits the
+encounters into that many contiguous blocks and runs the whole pipeline on each
+block in a forked worker:
+
+```{r eval=FALSE}
+result <- comorbidity(example_patient_data,
+                      dx_cols = c("dx1", "dx2", "dx3"),
+                      poa_cols = c("poa1", "poa2", "poa3"),
+                      ncores = 4)
+```
+
+The result is identical for every `ncores` value. Every stage of the pipeline is
+per-encounter, and overlapping lookup patterns are resolved by the pattern's index
+in the lookup table — a property of the table, not of the data — so each block
+resolves an overlap exactly as a whole-dataset run would.
+
+Peak memory grows with `ncores`, since each worker materializes its own
+long-format intermediate. On large inputs memory, not core count, is usually what
+limits how high you can set it. Values above `parallel::detectCores()` are clamped
+with a warning, and because forking is unavailable on Windows, `ncores > 1` there
+falls back to serial with a warning.
+
+### Choosing an AHRQ release
+
+AHRQ revises the comorbidity software every year, and the revisions are not cosmetic: v2026.1 maps
+4567 diagnosis codes where v2022.1 mapped 4319, and the mortality index weights changed between
+v2022.1 and v2023.1. The same patient can therefore score differently depending on which release you
+use, which matters in two situations — reproducing a published cohort, and keeping a long-running
+study on one definition.
+
+Pass `release =` to both functions to pin it:
+
+```{r eval=FALSE}
+res <- comorbidity(patient_data,
+                   dx_cols  = c("dx2", "dx3", "dx4"),
+                   poa_cols = c("poa2", "poa3", "poa4"),
+                   release  = "2023.1")
+res <- cmr_index(res, release = "2023.1")
+```
+
+The release selects three things: the diagnosis-code table, the newest ICD-10-CM version reachable
+from `year`/`quarter`, and the index weights. It does **not** change the result schema — every
+release produces the same 38 `CMR_*` columns, with categories a release does not define left at
+zero.
+
+`comorbidity()` records the release on its result as the `cmr_release` attribute, and `cmr_index()`
+warns if you score flags from one release with another's weights:
+
+```{r eval=FALSE}
+flags <- comorbidity(patient_data, dx_cols, poa_cols, release = "2022.1")
+attr(flags, "cmr_release")
+#> [1] "2022.1"
+
+cmr_index(flags)   # defaults to 2026.1 weights
+#> Warning: flags were scored under AHRQ release 2022.1 but are being indexed
+#> with 2026.1 weights; pass release = "2022.1" to match
+```
+
+The attribute is a warning aid, not a default — subsetting a data frame drops attributes, so
+`cmr_index()` never infers the release from it.
+
+Releases earlier than v2022.1 are not supported. AHRQ's v2021.1 is structurally different software
+rather than merely older tables, and it ships no index program at all.
+
 ## Understanding Your Data
 
-For the simple workflow above, the package used the example data you prepared. 
+For the simple workflow above, the package used the example data you prepared.
 Let's examine the structure and results in more detail.
 
 ## Detailed Analysis

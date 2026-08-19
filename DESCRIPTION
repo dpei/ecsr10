@@ -1,19 +1,21 @@
 Package: ecsr10
 Type: Package
 Title: Elixhauser Comorbidity Software Refined for ICD-10-CM
-Version: 0.1.2
+Version: 0.3.0
 Author: Dong Pei
 Maintainer: Dong Pei <peidong2009@gmail.com>
 Authors@R: person("Dong", "Pei", email = "peidong2009@gmail.com", 
                   role = c("aut", "cre"))
-Description: An R implementation of the Elixhauser Comorbidity Software Refined 
-    for ICD-10-CM Diagnoses. 
+Description: An R implementation of the Elixhauser Comorbidity Software Refined
+    for ICD-10-CM Diagnoses. Reproduces AHRQ/HCUP releases v2022.1 through
+    v2026.1, selectable per call, covering ICD-10-CM diagnosis codes from
+    October 2015 through September 2026. Defaults to v2026.1.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.3.3
 Depends: R (>= 3.5.0)
-Imports: dplyr, readr, stringr, tidyr, purrr, janitor, magrittr
+Imports: dplyr, readr, stringr, tidyr, purrr, janitor, magrittr, parallel
 Suggests: testthat (>= 3.0.0), knitr, rmarkdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr

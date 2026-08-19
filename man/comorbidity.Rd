@@ -10,10 +10,12 @@ comorbidity(
   poa_cols = NULL,
   year_col = "year",
   quarter_col = "quarter",
+  release = cmr_version(),
   comfmt = NULL,
   poa_exempt = NULL,
   use_poa = TRUE,
-  wildcard_mode = "wildcard"
+  wildcard_mode = "wildcard",
+  ncores = 1
 )
 }
 \arguments{
@@ -27,8 +29,16 @@ comorbidity(
 
 \item{quarter_col}{Character, name of column containing quarter information (default "quarter")}
 
+\item{release}{Character, which AHRQ CMR release to score with (default
+\code{cmr_version()}, the newest available). See \code{\link{cmr_releases}}
+for the supported set. The release selects the diagnosis-code table, the
+newest ICD-10-CM version reachable from year/quarter, and - via
+\code{\link{cmr_index}} - the index weights. It is recorded on the result as
+the \code{cmr_release} attribute. An explicit \code{comfmt} overrides only
+the code table; the release's ICD-version cap still applies.}
+
 \item{comfmt}{Data frame with comorbidity format containing "target" and "pattern" columns.
-If NULL (default), uses the built-in comfmt_lookup data.}
+If NULL (default), uses the built-in table for \code{release}.}
 
 \item{poa_exempt}{Named list of POA exempt codes by version. If NULL (default),
 uses the built-in poaxmpt_codes_long data when use_poa is TRUE.}
@@ -36,6 +46,22 @@ uses the built-in poaxmpt_codes_long data when use_poa is TRUE.}
 \item{use_poa}{Logical, whether to apply POA logic (default TRUE)}
 
 \item{wildcard_mode}{Character, pattern matching mode ("wildcard" or "regex")}
+
+\item{ncores}{Integer, number of forked workers the encounters are split across
+  (default 1, i.e. serial). The input is divided into \code{ncores} contiguous
+  blocks of rows and the whole pipeline runs on each block independently.
+  Values above \code{parallel::detectCores()} are clamped with a warning.
+  Forking is unavailable on Windows, where any value above 1 falls back to
+  serial with a warning.
+
+  Results are identical for every \code{ncores} value. Every stage is
+  per-encounter, and overlapping lookup patterns are resolved by the pattern's
+  index in \code{comfmt}, which is the same in every block - so a block's
+  code-to-target map is an exact restriction of the whole-dataset one.
+
+  Peak memory grows with \code{ncores} - each worker materializes its own
+  long-format intermediate - so memory, not core count, is usually the
+  binding constraint on large inputs.}
 }
 \value{
 Data frame with original patient diagnosis data plus 38 CMR comorbidity flags
@@ -100,8 +126,14 @@ result_with_indices <- cmr_index(result)
 
 # Advanced workflow with custom lookup data
 custom_comfmt <- build_comfmt_from_csv("path/to/custom_lookup.csv")
-result <- comorbidity(patient_data, 
+result <- comorbidity(patient_data,
                       dx_cols = c("dx2", "dx3", "dx4"),
                       comfmt = custom_comfmt)
+
+# Split the encounters across 4 forked workers
+result <- comorbidity(patient_data,
+                      dx_cols = c("dx2", "dx3", "dx4"),
+                      poa_cols = c("poa2", "poa3", "poa4"),
+                      ncores = 4)
 }
 }

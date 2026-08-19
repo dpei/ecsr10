@@ -5,16 +5,18 @@ test_that("determine_icd_version works correctly", {
   expect_equal(determine_icd_version(2016, 4), 34)
   expect_equal(determine_icd_version(2024, 4), 42)
   expect_equal(determine_icd_version(2025, 1), 42)
-  
+  expect_equal(determine_icd_version(2025, 4), 43)
+  expect_equal(determine_icd_version(2026, 1), 43)
+
   # Test vectors
-  years <- c(2015, 2016, 2024, 2025)
-  quarters <- c(4, 4, 4, 1)
-  expected <- c(33, 34, 42, 42)
+  years <- c(2015, 2016, 2024, 2025, 2026)
+  quarters <- c(4, 4, 4, 1, 3)
+  expected <- c(33, 34, 42, 42, 43)
   expect_equal(determine_icd_version(years, quarters), expected)
-  
-  # Test default case (future dates)
-  expect_equal(determine_icd_version(2030, 1), 42)
-  expect_equal(determine_icd_version(1990, 1), 42)
+
+  # Test default case (unmapped dates fall back to the newest version)
+  expect_equal(determine_icd_version(2030, 1), 43)
+  expect_equal(determine_icd_version(1990, 1), 43)
 })
 
 test_that("build_comfmt_from_csv handles different schemas", {
