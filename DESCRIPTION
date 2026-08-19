@@ -1,7 +1,7 @@
 Package: ecsr10
 Type: Package
 Title: Elixhauser Comorbidity Software Refined for ICD-10-CM
-Version: 0.3.0
+Version: 0.4.0
 Author: Dong Pei
 Maintainer: Dong Pei <peidong2009@gmail.com>
 Authors@R: person("Dong", "Pei", email = "peidong2009@gmail.com", 
@@ -22,4 +22,4 @@ VignetteBuilder: knitr
 URL: https://github.com/dpei/ecsr10
 BugReports: https://github.com/dpei/ecsr10/issues
 NeedsCompilation: no
-Packaged: 2025-09-28 21:01:55 UTC; dpei
+Packaged: 2026-08-18 21:01:55 UTC; dpei
