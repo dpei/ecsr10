@@ -25,7 +25,7 @@ knitr::opts_chunk$set(
 
 The `ecsr10` package provides an R implementation of the Elixhauser Comorbidity Software Refined (CMR) workflow for analyzing ICD-10-CM diagnosis codes and calculating comorbidity indices. This package is designed for healthcare researchers and data analysts who need to identify comorbidities and calculate risk scores from patient diagnosis data.
 
-It implements AHRQ/HCUP releases **v2022.1 through v2026.1**, selectable per call. The default, `cmr_version()`, is v2026.1, covering ICD-10-CM diagnosis codes from October 2015 through September 2026 (ICD-10-CM versions 33–43). Record the release alongside any published results: the same patient can flag differently across releases, and reproducing an existing cohort means scoring it under the release it was built with.
+It implements both families AHRQ has published, selectable per call with `variant`: the **Refined** software (`"refined"`, the default) at releases **v2021.1 through v2026.1**, and the superseded **beta** software (`"beta"`) at **v2016.2 through v2020.1**. The default release, `cmr_version()`, is Refined v2026.1. Together the two cover ICD-10-CM diagnosis codes from October 2015 through September 2026 (ICD-10-CM versions 33–43). Record the release alongside any published results: the same patient can flag differently across releases, and reproducing an existing cohort means scoring it under the release it was built with.
 
 ## Installation
 
@@ -57,22 +57,27 @@ The package automatically uses built-in lookup data, making the process straight
 ## Step 1: Data Preparation
 
 Your patient diagnosis data should be in wide format with:
+
 - Diagnosis code columns (DX1, DX2, ..., DXn)
-- Present on Admission (POA) columns (POA1, POA2, ..., POAn)  
+- Present on Admission (POA) columns (POA1, POA2, ..., POAn)
 - Year and quarter for ICD version determination
 - Patient/encounter identifiers
 
 ```{r}
-# Example patient diagnosis data structure
+# Example patient diagnosis data structure.
+# dx1/poa1 are the PRINCIPAL diagnosis - present in the data, but deliberately
+# not passed to comorbidity() below. See "Secondary diagnoses only".
 example_patient_data <- data.frame(
   encounter_id = 1:3,
   test_type = "example",
-  dx1 = c("E119", "I10", "Z5111"),
-  dx2 = c("I10", "E119", "N183"),
-  dx3 = c(NA, "N183", NA),
+  dx1 = c("I2510", "S72001A", "O80"),
+  dx2 = c("E119",  "I10",     "Z5111"),
+  dx3 = c("I10",   "E119",    "N183"),
+  dx4 = c(NA,      "N183",    NA),
   poa1 = c("Y", "Y", "Y"),
-  poa2 = c("N", "Y", "W"),
-  poa3 = c(NA, "Y", NA),
+  poa2 = c("Y", "Y", "Y"),
+  poa3 = c("N", "Y", "W"),
+  poa4 = c(NA,  "Y", NA),
   year = 2025,
   quarter = 1,
   stringsAsFactors = FALSE
@@ -81,13 +86,38 @@ example_patient_data <- data.frame(
 print(example_patient_data)
 ```
 
+### Secondary diagnoses only
+
+This is the one input rule that changes your answers if you get it wrong, and it
+fails quietly rather than loudly.
+
+The AHRQ SAS program opens its diagnosis loop at position 2 —
+`DO I = 2 TO MIN(&MAXNDX,&NUMDX)` — so the principal diagnosis never reaches the
+comorbidity logic. `comorbidity()` scores **every column you hand it**, which
+makes the exclusion your job: pass `dx2`, `dx3`, ... and leave `dx1` out. Passing
+a position-1 column draws a warning, but it still scores, and the result will
+differ from SAS.
+
+Two related points:
+
+- **`dx_cols` and `poa_cols` are paired by the first run of digits in each column
+  name**, not by position in the two vectors — so `c("poa3", "poa2")` pairs
+  exactly as `c("poa2", "poa3")` does. The two position sets must be identical.
+  `dx3` paired with `poa4` is an error, not a silently blank POA, and so are
+  duplicate positions: HCUP's own `I10_DX2` and `I10_DX3` both resolve to 10.
+  Use names whose only digits are the position.
+- **The encounter's diagnosis count is not applied.** SAS caps its loop at
+  `I10_NDX`, ignoring a populated column beyond it. ecsr10 has no equivalent, so
+  truncate `dx_cols` yourself if your data carries a meaningful count.
+
 ## Quick Start Example
 
 ```{r}
-# Simple workflow - uses built-in lookup data automatically
-result <- comorbidity(example_patient_data, 
-                      dx_cols = c("dx1", "dx2", "dx3"),
-                      poa_cols = c("poa1", "poa2", "poa3"))
+# Simple workflow - uses built-in lookup data automatically.
+# Note dx1/poa1 are absent: secondary diagnoses only.
+result <- comorbidity(example_patient_data,
+                      dx_cols  = c("dx2", "dx3", "dx4"),
+                      poa_cols = c("poa2", "poa3", "poa4"))
 
 # Calculate risk indices
 result_with_indices <- cmr_index(result)
@@ -106,8 +136,8 @@ block in a forked worker:
 
 ```{r eval=FALSE}
 result <- comorbidity(example_patient_data,
-                      dx_cols = c("dx1", "dx2", "dx3"),
-                      poa_cols = c("poa1", "poa2", "poa3"),
+                      dx_cols  = c("dx2", "dx3", "dx4"),
+                      poa_cols = c("poa2", "poa3", "poa4"),
                       ncores = 4)
 ```
 
@@ -141,9 +171,11 @@ res <- cmr_index(res, release = "2023.1")
 ```
 
 The release selects three things: the diagnosis-code table, the newest ICD-10-CM version reachable
-from `year`/`quarter`, and the index weights. It does **not** change the result schema — every
-release produces the same 38 `CMR_*` columns, with categories a release does not define left at
-zero.
+from `year`/`quarter`, and the index weights. Every release produces 38 `CMR_*` columns in the same
+order, with categories a release does not define left at zero — but **v2021.1 names two of them
+differently**, `CMR_ARTH` and `CMR_CHF`, which v2022.1 renamed to `CMR_AUTOIMMUNE` and `CMR_HF`.
+`comorbidity()` emits each release's own spelling, so code that hardcodes either pair has to branch
+on the release.
 
 `comorbidity()` records the release on its result as the `cmr_release` attribute, and `cmr_index()`
 warns if you score flags from one release with another's weights:
@@ -161,8 +193,58 @@ cmr_index(flags)   # defaults to 2026.1 weights
 The attribute is a warning aid, not a default — subsetting a data frame drops attributes, so
 `cmr_index()` never infers the release from it.
 
-Releases earlier than v2022.1 are not supported. AHRQ's v2021.1 is structurally different software
-rather than merely older tables, and it ships no index program at all.
+### v2021.1 has no comorbidity indices
+
+AHRQ states the Elixhauser Comorbidity Indices "are not available until v2022.1", and ships no index
+program before it. `cmr_index()` therefore refuses v2021.1 rather than applying a later release's
+weights:
+
+```{r eval=FALSE}
+res <- comorbidity(patient_data, dx_cols, poa_cols, release = "2021.1")
+cmr_index(res, release = "2021.1")
+#> Error: AHRQ ships no comorbidity index program for release "2021.1" ...
+```
+
+Score the flags under v2021.1 if that is the mapping you need, then index them explicitly under a
+release that has weights — and say so in the write-up, because the two are then on different
+definitions.
+
+### The beta software (v2016.2 – v2020.1)
+
+Before v2021.1, AHRQ published the Elixhauser Comorbidity Software for ICD-10-CM as a **beta**
+version. It is superseded software rather than merely older tables:
+
+|  | refined (v2021.1+) | beta (v2016.2 – v2020.1) |
+|---|---|---|
+| measures | 38 | 30, plus a derived `CMRB_HTN_C` |
+| pre-existing conditions identified by | POA indicators, for 18 measures | an MS-DRG exclusion screen |
+| indices | v2022.1 onward | none |
+| applies to | inpatient and outpatient | inpatient only |
+
+The MS-DRG screen suppresses a comorbidity when the encounter's MS-DRG is directly related to the
+principal diagnosis — heart failure recorded on a cardiac admission is treated as the reason for the
+stay rather than a pre-existing condition. That is why the beta variant takes a `drg_col`:
+
+```{r eval=FALSE}
+res <- comorbidity(patient_data,
+                   dx_cols = c("dx2", "dx3", "dx4"),
+                   variant = "beta",
+                   release = "2020.1",
+                   drg_col = "drg")
+names(res)[grepl("^CMRB_", names(res))]
+#> [1] "CMRB_CHF" "CMRB_VALVE" ... "CMRB_HTN_C"
+```
+
+Output columns carry a `CMRB_` prefix. That is deliberate rather than cosmetic: several beta measure
+names coincide with refined ones while meaning something different — beta `CHF` is DRG-screened
+where refined `CMR_HF` is POA-screened — so the two families are kept in separate namespaces, and
+`cmr_index()` refuses a beta result outright.
+
+Omitting `drg_col` runs with no screen and warns. That is faithful (AHRQ's SAS applies no
+suppression when `DRG` is missing) but is rarely what an inpatient analysis wants.
+
+Use the refined software unless you are specifically reproducing a pre-2021 analysis. AHRQ's own
+advice is to use the most recent version of the tool.
 
 ## Understanding Your Data
 
@@ -197,19 +279,57 @@ summary(result_with_indices[c("CMR_Index_Readmission", "CMR_Index_Mortality")])
 
 ### Custom Data Sources
 
-For advanced users who need custom lookup data, you can still provide your own formats:
+Most users never need this — `release` already selects among the eleven AHRQ
+tables the package ships. But `comorbidity()` accepts both lookup structures
+directly, as plain R objects, if you need to score against a table of your own.
+
+`comfmt` is a data frame of `target` and `pattern`. Under the default
+`wildcard_mode = "wildcard"` a `%` in a pattern matches any run of characters;
+each pattern is anchored, so `"I10"` matches only `I10`. Where two patterns match
+the same code, the earlier **row** wins — order in the table is meaningful.
+
+Targets are the AHRQ measure names **without** the `CMR_` prefix: the table
+speaks `DIAB_UNCX`, the output column is `CMR_DIAB_UNCX`. A target the package
+does not recognise is an error rather than a silently dropped row, so a typo
+surfaces immediately.
+
+```{r}
+custom_comfmt <- data.frame(
+  target  = c("DIAB_UNCX", "HTN_UNCX", "RENLFL_MOD"),
+  pattern = c("E11%",      "I10",      "N183"),
+  stringsAsFactors = FALSE
+)
+
+custom_result <- comorbidity(example_patient_data,
+                             dx_cols  = c("dx2", "dx3", "dx4"),
+                             poa_cols = c("poa2", "poa3", "poa4"),
+                             comfmt   = custom_comfmt)
+
+custom_result[, c("encounter_id", "CMR_DIAB_UNCX", "CMR_HTN_UNCX", "CMR_RENLFL_MOD")]
+```
+
+The output schema does not shrink to match: all 38 `CMR_*` columns are still
+emitted, and a target your table never mentions simply stays 0.
+
+`poa_exempt` takes the companion structure — a named list of code vectors keyed
+`v33`, `v34`, ..., one entry per ICD-10-CM version, which the pipeline selects
+from using each encounter's year and quarter:
 
 ```{r eval=FALSE}
-# Advanced workflow with custom lookup data
-# Note: These functions are internal but can still be used if needed
-custom_comfmt <- build_comfmt_from_csv("path/to/your/lookup.csv")
-custom_poa <- build_poa_exempt_formats("path/to/your/poa_exempt.csv")
+custom_poa <- list(
+  v42 = c("Z5111", "Z9989"),
+  v43 = c("Z5111", "Z9989", "N183")
+)
 
-result <- comorbidity(patient_data, 
-                      dx_cols = c("dx1", "dx2", "dx3"),
-                      comfmt = custom_comfmt,
+result <- comorbidity(example_patient_data,
+                      dx_cols    = c("dx2", "dx3", "dx4"),
+                      poa_cols   = c("poa2", "poa3", "poa4"),
+                      comfmt     = custom_comfmt,
                       poa_exempt = custom_poa)
 ```
+
+Note that `comfmt` overrides only the code table. The release's ICD-10-CM version
+ceiling still applies, and the index weights still come from `release`.
 
 ## Understanding the Results
 
@@ -241,19 +361,7 @@ The package handles POA logic automatically:
 - **POA-dependent conditions**: Only assigned if POA='Y'/'W' or code is POA-exempt
 - **Special cases**: CBVD logic and combination codes
 
-## Advanced Usage
-
-### Custom Data Sources
-
-You can use your own comorbidity lookup files:
-
-```{r eval=FALSE}
-# Use custom lookup file
-custom_comfmt <- build_comfmt_from_csv("path/to/your/lookup.csv")
-
-# Use custom POA exempt list  
-custom_poa <- build_poa_exempt_formats("path/to/your/poa_exempt.csv")
-```
+## Performance and Troubleshooting
 
 ### Performance Considerations
 
@@ -267,7 +375,18 @@ For large datasets, the package automatically optimizes performance through:
 
 Common issues and solutions:
 
-1. **Missing POA columns**: Set `poa_cols = NULL` and `use_poa = FALSE`
+1. **Missing POA columns**: Set `poa_cols = NULL` and `use_poa = FALSE`.
+
+   Be aware of what this costs. 18 of the 38 measures are defined only in terms
+   of POA, so they are not scoreable without it and come back as `NA` rather
+   than 0 -- the same answer AHRQ's SAS program gives under `%LET POA = 0`,
+   which never initialises them. The columns are still there, so the result
+   binds against a POA-on one, but the liver and renal-failure hierarchies and
+   the whole `CMR_CBVD` derivation do not run either. `cmr_index()` then scores
+   the 20 POA-neutral measures only, and returns ordinary numbers while doing
+   so -- a POA-off index looks exactly like a POA-on one and is not comparable
+   with it. If you need all 38 measures, obtain POA data; the package offers
+   no way to score the gated measures without it.
 2. **Wrong year/quarter**: Ensure year/quarter columns exist and contain valid values
 3. **ICD code format**: The package normalizes codes automatically (removes dots, uppercase)
 

@@ -83,8 +83,10 @@ test_that("chunking holds with use_poa = FALSE", {
                          use_poa = FALSE, ncores = 2)
 
   expect_identical(serial, chunked)
-  # The CBVD derivation lives inside the use_poa branch, so it stays 0 here.
-  expect_true(all(chunked$CMR_CBVD == 0))
+  # CBVD is one of the 18 measures AHRQ's SAS leaves missing with POA off, so it
+  # is NA rather than 0 - and NA per chunk, which is what makes rbind-ing the
+  # blocks back together still match a serial run.
+  expect_true(all(is.na(chunked$CMR_CBVD)))
 })
 
 test_that("ncores is validated", {
@@ -98,4 +100,75 @@ test_that("ncores is validated", {
     comorbidity(test_data, dx_cols = c("dx2", "dx3"), ncores = c(1, 2)),
     "positive integer"
   )
+})
+
+# ---------------------------------------------------------------------------
+# The beta variant forks through a separate function, .comorbidity_beta(), so
+# the invariant has to be pinned there too. Its extra hazard over the refined
+# path is `drg`: the DRG vector is subset alongside the rows, and getting that
+# subscript wrong misaligns every encounter's screen without changing the row
+# count - a corruption that is invisible to a shape check.
+
+make_beta_data <- function(n) {
+  codes <- data.frame(
+    dx1 = "Z0000",
+    # I5022 -> CHF, I1310 -> a detailed hypertension label, E119 -> DM,
+    # C7800 -> METS, and one row that maps to nothing.
+    dx2 = c("I5022", "I1310", "E119",  "C7800",  "Z9981", "I5022"),
+    dx3 = c("I119",  "I5022", "E1165", "C50911", NA,      "I119"),
+    # 291 is a CARDDRG (suppresses CHF/VALVE), 638 a DIABDRG, 3 is in no screen.
+    # The last row repeats the first with an unscreened DRG, so CHF is present in
+    # the output as well as suppressed in it - a fixture where every CHF is
+    # screened away would let a broken screen pass.
+    drg = c(291L, 291L, 638L, 3L, 3L, 3L),
+    stringsAsFactors = FALSE
+  )
+  out <- codes[rep_len(seq_len(nrow(codes)), n), , drop = FALSE]
+  out$encounter_id <- sprintf("BENC%05d", seq_len(n))
+  rownames(out) <- NULL
+  out[, c("encounter_id", "drg", "dx1", "dx2", "dx3")]
+}
+
+test_that("chunked and serial beta runs give identical results", {
+  d <- make_beta_data(97)   # uneven split: 49 / 48
+
+  serial <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                        release = "2020.1", drg_col = "drg", ncores = 1)
+  chunked <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                         release = "2020.1", drg_col = "drg", ncores = 2)
+
+  expect_equal(serial, chunked)
+  expect_identical(attr(chunked, "cmr_variant"), "beta")
+
+  # The screen must actually be biting on this fixture, or the test proves
+  # nothing about the drg subsetting it is here to check.
+  expect_true(any(serial$CMRB_CHF[serial$drg == 291L] == 0L))
+  expect_true(any(serial$CMRB_CHF == 1L))
+})
+
+test_that("beta chunking survives more chunks than rows", {
+  d <- make_beta_data(1)
+  serial <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                        release = "2020.1", drg_col = "drg", ncores = 1)
+  chunked <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                         release = "2020.1", drg_col = "drg", ncores = 2)
+  expect_equal(serial, chunked)
+  expect_equal(nrow(chunked), 1L)
+})
+
+test_that("beta chunking keeps drg aligned with its rows", {
+  # The direct test of the hazard: two encounters with the same diagnoses but
+  # different DRGs must keep their own answers no matter where the split lands.
+  d <- make_beta_data(40)
+  d$drg <- rep(c(291L, 3L), length.out = nrow(d))   # alternate screened/not
+  d$dx2 <- "I5022"; d$dx3 <- NA_character_
+
+  serial <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                        release = "2020.1", drg_col = "drg", ncores = 1)
+  chunked <- comorbidity(d, dx_cols = c("dx2", "dx3"), variant = "beta",
+                         release = "2020.1", drg_col = "drg", ncores = 2)
+
+  expect_equal(serial, chunked)
+  expect_true(all(chunked$CMRB_CHF[chunked$drg == 291L] == 0L))
+  expect_true(all(chunked$CMRB_CHF[chunked$drg == 3L] == 1L))
 })

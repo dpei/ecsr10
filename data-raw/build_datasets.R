@@ -7,6 +7,8 @@
 # Writes:
 #   data/comfmt_releases.rda   code -> comorbidity for every supported release
 #   data/comfmt_lookup.rda     the v2026.1 view, kept for backwards compatibility
+#   data/beta_comfmt.rda       code -> measure for the five BETA versions
+#   data/beta_drg_screens.rda  the beta MS-DRG exclusion screens, as integer ranges
 #
 # Does NOT write data/poaxmpt_codes_long.rda. The POA-exempt lists are keyed by
 # ICD-10-CM version, not by AHRQ release, and every release ships byte-identical
@@ -31,7 +33,8 @@ DEFAULT_RELEASE <- "2026.1"
 SAS_DIR  <- here("..", "..", "SAS_software")
 DATA_DIR <- here("..", "data")
 
-message("Parsing ", length(AHRQ_RELEASES), " AHRQ releases from ", normalizePath(SAS_DIR))
+message("Parsing ", length(AHRQ_RELEASES), " refined releases and ",
+        length(AHRQ_BETA_RELEASES), " beta versions from ", normalizePath(SAS_DIR))
 
 parsed <- lapply(AHRQ_RELEASES, function(r) {
   f  <- format_program_path(r, SAS_DIR)
@@ -60,22 +63,78 @@ comfmt_releases <- do.call(rbind, lapply(AHRQ_RELEASES, function(r) {
 }))
 rownames(comfmt_releases) <- NULL
 
+# ---- beta_comfmt --------------------------------------------------------------
+# Same long shape as comfmt_releases, from the beta family's $RCOMFMT block.
+#
+# Rows whose target is the NONE catch-all are dropped. That is a no-op, not a
+# simplification: the beta analysis program compares DXVALUE against its 30
+# measure names and then against its 10 hypertension labels, so a DXVALUE of
+# "NONE" falls through both exactly the way an unmapped code does. Dropping them
+# matters because v2016.2 does not rely on `other = " "` - it enumerates all
+# 66,666 non-comorbidity codes explicitly (in two spellings, "None" and "NONE"),
+# which would make the shipped table 20x larger for no behavioural difference.
+# Safe only because no beta code carries a `%` wildcard, so matching is exact and
+# a dropped row cannot expose a code to some other pattern; checks.R pins both
+# that and the fact that NONE is the only target ever dropped.
+beta_parsed <- lapply(AHRQ_BETA_RELEASES, function(r) {
+  f  <- format_program_path(r, SAS_DIR, "beta")
+  cf <- parse_comfmt(f, AHRQ_LAYOUT$beta$block)
+  cf <- cf[!grepl("^none$", cf$comorbidity, ignore.case = TRUE), , drop = FALSE]
+  rownames(cf) <- NULL
+  dg <- parse_drg_screens(f)
+  message(sprintf("  %-8s %-38s %5d codes, %2d targets, %2d DRG screens / %3d ranges",
+                  r, basename(f), nrow(cf), length(unique(cf$comorbidity)),
+                  length(unique(dg$screen)), nrow(dg)))
+  list(comfmt = cf, drg = dg)
+})
+names(beta_parsed) <- AHRQ_BETA_RELEASES
+
+beta_comfmt <- do.call(rbind, lapply(AHRQ_BETA_RELEASES, function(r) {
+  data.frame(release     = r,
+             code        = beta_parsed[[r]]$comfmt$code,
+             comorbidity = beta_parsed[[r]]$comfmt$comorbidity,
+             stringsAsFactors = FALSE)
+}))
+rownames(beta_comfmt) <- NULL
+
+# ---- beta_drg_screens ---------------------------------------------------------
+# One row per (version, screen, contiguous MS-DRG range). Ranges rather than
+# expanded members: the source is written that way, the widest screen spans 100+
+# DRGs, and membership is an interval test either way.
+beta_drg_screens <- do.call(rbind, lapply(AHRQ_BETA_RELEASES, function(r) {
+  d <- beta_parsed[[r]]$drg
+  data.frame(release  = r,
+             screen   = d$screen,
+             drg_low  = as.integer(d$drg_low),
+             drg_high = as.integer(d$drg_high),
+             stringsAsFactors = FALSE)
+}))
+rownames(beta_drg_screens) <- NULL
+
 # ---- comfmt_lookup ------------------------------------------------------------
 # The default-release view, regenerated from the same parse so the two objects
 # cannot drift. checks.R pins that it equals the corresponding slice.
 comfmt_lookup <- parsed[[DEFAULT_RELEASE]]
 
-message("\ncomfmt_releases: ", nrow(comfmt_releases), " rows over ",
+message("\ncomfmt_releases:  ", nrow(comfmt_releases), " rows over ",
         length(AHRQ_RELEASES), " releases")
-message("comfmt_lookup:   ", nrow(comfmt_lookup), " rows (", DEFAULT_RELEASE, ")")
+message("comfmt_lookup:    ", nrow(comfmt_lookup), " rows (", DEFAULT_RELEASE, ")")
+message("beta_comfmt:      ", nrow(beta_comfmt), " rows over ",
+        length(AHRQ_BETA_RELEASES), " beta versions")
+message("beta_drg_screens: ", nrow(beta_drg_screens), " ranges")
 
 save(comfmt_releases, file = file.path(DATA_DIR, "comfmt_releases.rda"),
      compress = "xz", version = 3)
 save(comfmt_lookup, file = file.path(DATA_DIR, "comfmt_lookup.rda"),
      compress = "gzip", version = 3)
+save(beta_comfmt, file = file.path(DATA_DIR, "beta_comfmt.rda"),
+     compress = "xz", version = 3)
+save(beta_drg_screens, file = file.path(DATA_DIR, "beta_drg_screens.rda"),
+     compress = "gzip", version = 3)
 
 message("\nWrote:")
-for (f in c("comfmt_releases.rda", "comfmt_lookup.rda")) {
+for (f in c("comfmt_releases.rda", "comfmt_lookup.rda",
+            "beta_comfmt.rda", "beta_drg_screens.rda")) {
   message(sprintf("  data/%-22s %6.1f KB", f,
                   file.size(file.path(DATA_DIR, f)) / 1024))
 }

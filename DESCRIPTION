@@ -1,15 +1,20 @@
 Package: ecsr10
 Type: Package
-Title: Elixhauser Comorbidity Software Refined for ICD-10-CM
-Version: 0.4.0
+Title: Elixhauser Comorbidity Software for ICD-10-CM
+Version: 0.5.0
 Author: Dong Pei
 Maintainer: Dong Pei <peidong2009@gmail.com>
 Authors@R: person("Dong", "Pei", email = "peidong2009@gmail.com", 
                   role = c("aut", "cre"))
-Description: An R implementation of the Elixhauser Comorbidity Software Refined
-    for ICD-10-CM Diagnoses. Reproduces AHRQ/HCUP releases v2022.1 through
-    v2026.1, selectable per call, covering ICD-10-CM diagnosis codes from
-    October 2015 through September 2026. Defaults to v2026.1.
+Description: An R implementation of AHRQ/HCUP's Elixhauser Comorbidity Software
+    for ICD-10-CM Diagnoses, covering both families the agency has published.
+    The Refined software (v2021.1 through v2026.1) assigns 38 comorbidity
+    measures, 18 of them using Present on Admission indicators, and the two
+    comorbidity indices from v2022.1 on. The superseded beta software (v2016.2
+    through v2020.1) assigns 30 measures and screens on MS-DRG instead of POA.
+    Either family is selectable per call, together covering ICD-10-CM diagnosis
+    codes from October 2015 through September 2026. Defaults to Refined
+    v2026.1.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -22,4 +27,4 @@ VignetteBuilder: knitr
 URL: https://github.com/dpei/ecsr10
 BugReports: https://github.com/dpei/ecsr10/issues
 NeedsCompilation: no
-Packaged: 2026-08-18 21:01:55 UTC; dpei
+Packaged: 2025-09-28 21:01:55 UTC; dpei

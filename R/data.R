@@ -61,10 +61,10 @@
 #' package supports, in long form. \code{\link{comorbidity}} selects a slice of
 #' this via its \code{release} argument.
 #'
-#' @format A data frame with 3 columns and 22323 rows:
+#' @format A data frame with 3 columns and 26818 rows:
 #' \describe{
 #'   \item{release}{Character. AHRQ CMR release label, one of
-#'                  \code{\link{cmr_releases}()}: "2022.1" ... "2026.1".}
+#'                  \code{\link{cmr_releases}()}: "2021.1" ... "2026.1".}
 #'   \item{code}{Character. ICD-10-CM diagnosis code. Codes are exact; the matcher
 #'               also supports \code{\%} wildcards, but no shipped release uses them.}
 #'   \item{comorbidity}{Character. Target comorbidity category, including the
@@ -74,6 +74,7 @@
 #' Rows per release, reflecting AHRQ's annual additions:
 #' \tabular{lrrr}{
 #'   \strong{release} \tab \strong{codes} \tab \strong{targets} \tab \strong{newest ICD-10-CM version} \cr
+#'   2021.1 \tab 4495 \tab 45 \tab 38 \cr
 #'   2022.1 \tab 4319 \tab 46 \tab 39 \cr
 #'   2023.1 \tab 4432 \tab 47 \tab 40 \cr
 #'   2024.1 \tab 4463 \tab 47 \tab 41 \cr
@@ -81,14 +82,22 @@
 #'   2026.1 \tab 4567 \tab 49 \tab 43 \cr
 #' }
 #'
-#' Target sets are purely additive across these releases - AHRQ has never retired
+#' Target sets are purely additive from v2022.1 onward - AHRQ has never retired
 #' one - which is why the combination rules and category vectors in the scoring
-#' pipeline are release-blind. Code sets are \emph{not} nested, however: v2023.1
-#' dropped O9081, O9902 and O9903, and v2026.1 dropped R939. Do not assume an
-#' older release's codes are a subset of a newer one's.
+#' pipeline are release-blind. The single exception is v2021.1 to v2022.1, and it
+#' is a \emph{rename}, not a retirement: \code{ARTH} became \code{AUTOIMMUNE},
+#' \code{CHF} became \code{HF}, and the two combination targets embedding
+#' \code{CHF} moved with them. This table stores each release's own spelling.
 #'
-#' The number of output columns does not vary: every release yields the same 38
+#' Code sets are \emph{not} nested: v2022.1 dropped 202 codes when \code{ARTH}
+#' was redefined as \code{AUTOIMMUNE}, v2023.1 dropped O9081, O9902 and O9903,
+#' and v2026.1 dropped R939. Do not assume an older release's codes are a subset
+#' of a newer one's.
+#'
+#' The number of output columns does not vary: every release yields 38
 #' \code{CMR_*} flags, with categories a release does not define left at zero.
+#' Two of those columns are \emph{named} differently at v2021.1 -
+#' \code{CMR_ARTH} and \code{CMR_CHF} - matching that release's own SAS output.
 #'
 #' Each release slice is sorted by code, and codes are unique within a release.
 #'
@@ -160,3 +169,101 @@
 #' v43_codes <- poaxmpt_codes_long[poaxmpt_codes_long$version == 43, ]
 #' length(unique(v43_codes$code))
 "poaxmpt_codes_long"
+#' ICD-10-CM to Comorbidity Mapping, AHRQ Beta Versions
+#'
+#' The diagnosis-code-to-measure mapping for the five \emph{beta} versions of
+#' AHRQ's Elixhauser Comorbidity Software for ICD-10-CM, in long form.
+#' \code{\link{comorbidity}} selects a slice of this when called with
+#' \code{variant = "beta"}.
+#'
+#' @format A data frame with 3 columns and 17081 rows:
+#' \describe{
+#'   \item{release}{Character. Beta version label, one of
+#'                  \code{\link{cmr_releases}("beta")}: "2016.2" ... "2020.1".}
+#'   \item{code}{Character. ICD-10-CM diagnosis code, exact (no version uses a
+#'               \code{\%} wildcard).}
+#'   \item{comorbidity}{Character. One of the 30 beta measures, or one of the 10
+#'                      detailed hypertension labels that fan out into
+#'                      \code{HTNCX}, \code{CHF} and \code{RENLFAIL}.}
+#' }
+#' @details
+#' Codes per version:
+#' \tabular{lrrr}{
+#'   \strong{version} \tab \strong{codes} \tab \strong{targets} \tab \strong{MS-DRG grouper} \cr
+#'   2016.2 \tab 3166 \tab 40 \tab V34 \cr
+#'   2017.2 \tab 3448 \tab 40 \tab V34 \cr
+#'   2018.1 \tab 3479 \tab 40 \tab V35 \cr
+#'   2019.2 \tab 3493 \tab 40 \tab V36 \cr
+#'   2020.1 \tab 3495 \tab 40 \tab V37 \cr
+#' }
+#'
+#' All five define the same 40 targets, so only the code lists move.
+#'
+#' Rows mapping a code to AHRQ's \code{NONE} catch-all are omitted. That is a
+#' no-op rather than a simplification: the beta analysis program tests
+#' \code{DXVALUE} against its 30 measure names and then its 10 hypertension
+#' labels, so \code{"NONE"} falls through both exactly the way an unmapped code
+#' does. It matters because v2016.2 does not rely on the SAS \code{other = " "}
+#' clause - it enumerates all 66,666 non-comorbidity codes explicitly, which
+#' would make this table twenty times larger for no behavioural difference.
+#'
+#' There is no POA dimension. The beta software predates POA-based
+#' identification and instead suppresses comorbidities related to the principal
+#' diagnosis using \code{\link{beta_drg_screens}}.
+#' @seealso \code{\link{beta_drg_screens}}, \code{\link{comorbidity}},
+#'   \code{\link{comfmt_releases}} for the refined releases
+#' @source
+#' Parsed from the \code{$RCOMFMT} block of each version's
+#' \code{comformat_icd10cm_*.txt}, distributed by AHRQ/HCUP as the beta
+#' Elixhauser Comorbidity Software for ICD-10-CM.
+#' @examples
+#' data(beta_comfmt)
+#' table(beta_comfmt$release)
+#'
+#' # The 10 detailed hypertension labels are not measures - they fan out
+#' subset(beta_comfmt, release == "2020.1" & comorbidity == "HHRWHRF")
+"beta_comfmt"
+
+#' MS-DRG Exclusion Screens, AHRQ Beta Versions
+#'
+#' The 24 MS-DRG screens each beta version uses to suppress comorbidities that
+#' are directly related to the principal diagnosis - the beta software's
+#' equivalent of the POA logic the refined releases adopted at v2021.1.
+#'
+#' @format A data frame with 4 columns and 334 rows:
+#' \describe{
+#'   \item{release}{Character. Beta version label, "2016.2" ... "2020.1".}
+#'   \item{screen}{Character. SAS format name, e.g. \code{"CARDDRG"}. All 24 are
+#'                 defined by every version.}
+#'   \item{drg_low}{Integer. First MS-DRG in the range, inclusive.}
+#'   \item{drg_high}{Integer. Last MS-DRG in the range, inclusive. Equal to
+#'                   \code{drg_low} for a single-DRG entry.}
+#' }
+#' @details
+#' One row per contiguous MS-DRG range, as AHRQ writes them - not expanded to one
+#' row per DRG, since the widest screen spans over a hundred and membership is an
+#' interval test either way.
+#'
+#' The ranges move with the MS-DRG grouper version, which tracks the fiscal year:
+#' V34 at v2016.2 and v2017.2, V35 at v2018.1, V36 at v2019.2, V37 at v2020.1.
+#' They are 66, 66, 66, 67 and 69 ranges respectively.
+#'
+#' A screen suppresses a comorbidity only when the encounter's DRG falls in it -
+#' \code{CARDDRG} zeroes \code{CMRB_CHF} and \code{CMRB_VALVE}, for instance, on
+#' the reasoning that heart failure recorded on a cardiac admission is the reason
+#' for the stay rather than a pre-existing comorbidity. Which screen suppresses
+#' which measure is encoded in the pipeline, not in this table.
+#' @seealso \code{\link{beta_comfmt}}, \code{\link{comorbidity}}
+#' @source
+#' Parsed from the numeric \code{VALUE} blocks of each version's
+#' \code{comformat_icd10cm_*.txt}.
+#' @examples
+#' data(beta_drg_screens)
+#'
+#' # Cardiac DRGs under the V37 grouper
+#' subset(beta_drg_screens, release == "2020.1" & screen == "CARDDRG")
+#'
+#' # How many DRGs each screen covers at v2020.1
+#' d <- subset(beta_drg_screens, release == "2020.1")
+#' tapply(d$drg_high - d$drg_low + 1L, d$screen, sum)
+"beta_drg_screens"

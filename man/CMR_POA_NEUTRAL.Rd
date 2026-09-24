@@ -5,7 +5,7 @@
 \alias{CMR_POA_NEUTRAL}
 \title{Targets assigned regardless of POA}
 \format{
-An object of class \code{character} of length 20.
+An object of class \code{character} of length 21.
 }
 \usage{
 CMR_POA_NEUTRAL

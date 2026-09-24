@@ -35,6 +35,22 @@
 #
 # CRLF needs no special handling: `\r` is whitespace outside quoted strings, and
 # no token spans a line break.
+#
+# The BETA family (v2016.2-v2020.1, `comformat_icd10cm_*.txt`) shares that grammar
+# for its code table but names the block `$RCOMFMT`, and adds 24 blocks the refined
+# releases have no analogue for: NUMERIC MS-DRG screens, written without a `$` and
+# with bare integer ranges rather than quoted tokens:
+#
+#     VALUE CARDDRG                      /* Cardiac */
+#        001-002, 215-236,
+#        242-252 = "YES" ;
+#
+# `sas_value_blocks()` matches only `Value $NAME`, so those blocks are invisible to
+# it - a fifth silent failure if you reach for it by habit. `sas_drg_blocks()` and
+# `parse_drg_screens()` below handle them. Two traps of their own: the codes are
+# zero-padded in the source (`054` is DRG 54) but `DRG` is numeric in the DATA
+# step, and these blocks carry NO `other =` clause, so nothing truncates them but
+# the next `VALUE` header.
 
 # ---- reading -----------------------------------------------------------------
 
@@ -144,22 +160,89 @@ sas_pairs <- function(block, block_name = "<block>") {
              stringsAsFactors = FALSE)
 }
 
+#' Split a beta format program into its NUMERIC `Value NAME` blocks.
+#'
+#' The mirror of `sas_value_blocks()` for the MS-DRG screens: same slicing, but
+#' the header carries no `$`, and there is no `other =` clause to truncate at. A
+#' negative lookahead on `$` keeps this from also matching `Value $RCOMFMT`.
+sas_drg_blocks <- function(txt) {
+  txt <- strip_sas_comments(txt)
+  pat <- "Value\\s+(?!\\$)([A-Za-z0-9_]+)"
+  m <- gregexpr(pat, txt, ignore.case = TRUE, perl = TRUE)[[1]]
+  if (m[1] == -1L) stop("no numeric `Value NAME` blocks found", call. = FALSE)
+
+  hits   <- regmatches(txt, gregexpr(pat, txt, ignore.case = TRUE, perl = TRUE))[[1]]
+  names_ <- toupper(sub(pat, "\\1", hits, ignore.case = TRUE, perl = TRUE))
+
+  starts <- as.integer(m) + attr(m, "match.length")
+  ends   <- c(as.integer(m)[-1] - 1L, nchar(txt))
+
+  out <- vapply(seq_along(starts), function(i) substr(txt, starts[i], ends[i]),
+                character(1))
+  stats::setNames(out, names_)
+}
+
+#' Parse one numeric DRG screen block into integer ranges.
+#'
+#' Grammar is `low-high, low-high, ... single, ... = "YES" ;`. Everything after
+#' the `=` is the target and is discarded (it is always "YES"); a block whose
+#' target is anything else is a parse failure, not a silent skip.
+#'
+#' Zero padding is stripped by `as.integer()`; a bare value becomes a range whose
+#' bounds are equal, so callers only ever handle one shape.
+drg_ranges <- function(block, block_name = "<block>") {
+  segs <- strsplit(block, "=", fixed = TRUE)[[1]]
+  if (length(segs) < 2L) {
+    stop("malformed DRG block ", block_name, ": no `=` found", call. = FALSE)
+  }
+  tgt <- sas_tokens(segs[[2]])
+  if (!length(tgt) || !identical(toupper(tgt[[1]]), "YES")) {
+    stop("malformed DRG block ", block_name, ': expected = "YES", got ',
+         if (length(tgt)) paste0('"', tgt[[1]], '"') else "no token", call. = FALSE)
+  }
+
+  body  <- segs[[1]]
+  items <- trimws(strsplit(body, ",", fixed = TRUE)[[1]])
+  items <- items[nzchar(items)]
+  if (!length(items)) {
+    stop("malformed DRG block ", block_name, ": no values before `=`", call. = FALSE)
+  }
+
+  bad <- items[!grepl("^[0-9]+(\\s*-\\s*[0-9]+)?$", items)]
+  if (length(bad)) {
+    stop("malformed DRG block ", block_name, ": unparseable value(s) ",
+         paste(utils::head(bad, 5), collapse = ", "), call. = FALSE)
+  }
+
+  lo <- as.integer(sub("^([0-9]+).*$", "\\1", items))
+  hi <- as.integer(sub("^.*?([0-9]+)$", "\\1", items))
+  if (any(hi < lo)) {
+    stop("malformed DRG block ", block_name, ": inverted range", call. = FALSE)
+  }
+  data.frame(drg_low = lo, drg_high = hi, stringsAsFactors = FALSE)
+}
+
 # ---- the two datasets --------------------------------------------------------
 
-#' Parse `$COMFMT` from a format program.
+#' Parse the code table from a format program.
+#'
 #' Returns a data.frame(code, comorbidity), sorted by code - the order the
 #' shipped `comfmt_lookup` uses.
-parse_comfmt <- function(path) {
+#'
+#' `block` is `"COMFMT"` for every refined release (v2021.1 included) and
+#' `"RCOMFMT"` for the beta family, which is the only difference between the two
+#' families' code tables at the grammar level.
+parse_comfmt <- function(path, block = "COMFMT") {
   blocks <- sas_value_blocks(read_sas_text(path))
-  if (!"COMFMT" %in% names(blocks)) {
-    stop("no $COMFMT block in ", path, call. = FALSE)
+  if (!block %in% names(blocks)) {
+    stop("no $", block, " block in ", path, call. = FALSE)
   }
-  df <- sas_pairs(blocks[["COMFMT"]], "COMFMT")
+  df <- sas_pairs(blocks[[block]], block)
   names(df) <- c("code", "comorbidity")
 
   dup <- df$code[duplicated(df$code)]
   if (length(dup)) {
-    stop("duplicate codes in $COMFMT of ", path, ": ",
+    stop("duplicate codes in $", block, " of ", path, ": ",
          paste(utils::head(unique(dup), 5), collapse = ", "), call. = FALSE)
   }
 
@@ -205,26 +288,87 @@ parse_poaxmpt <- function(path, other_sentinel = TRUE) {
   out
 }
 
-#' The AHRQ releases this directory knows how to parse, newest last.
+#' The AHRQ REFINED releases this directory knows how to parse, newest last.
 #'
-#' v2021.1 is deliberately absent: it is structurally different software (two
-#' SAS programs rather than three, measures named ARTH/CHF rather than
-#' AUTOIMMUNE/HF, no `CMR_` output prefix, and no index program at all - AHRQ
-#' states the Indices "are not available until v2022.1"), and no independent
-#' reference exists to validate a translation of it against.
-AHRQ_RELEASES <- c("2022.1", "2023.1", "2024.1", "2025.1", "2026.1")
+#' v2021.1 is the first Refined release. It ships two SAS programs rather than
+#' three (`Comorb_ICD10CM_Format` / `Comorb_ICD10CM_Analy`, no index program -
+#' AHRQ states the Indices "are not available until v2022.1"), and names two of
+#' its 38 measures ARTH/CHF where v2022.1+ name them AUTOIMMUNE/HF. Everything
+#' else about it - the 38 measures, the 18 POA-gated ones, the six hierarchies -
+#' is what v2022.1 does. `SAS_software/2022.1/CMR-ChangeLog-v20211-v20221.xlsx`
+#' is the authority: its New/Redefined/Discontinued sheets are all empty and its
+#' `Change_to_Comorbidity` sheet lists exactly those two renames.
+AHRQ_RELEASES <- c("2021.1", "2022.1", "2023.1", "2024.1", "2025.1", "2026.1")
+
+#' The AHRQ BETA versions this directory knows how to parse, newest last.
+#'
+#' Genuinely different software, not older tables: 30 measures plus a derived
+#' HTN_C, no POA anywhere, and a 24-format MS-DRG screen that suppresses any
+#' comorbidity related to the principal diagnosis. Superseded by v2021.1, which
+#' dropped the MS-DRG screen in favour of POA.
+AHRQ_BETA_RELEASES <- c("2016.2", "2017.2", "2018.1", "2019.2", "2020.1")
+
+#' Per-family layout of `SAS_software/`.
+#'
+#' Keyed by variant. `dir` is the path fragment under SAS_software/, `pattern`
+#' locates the format program, and `block` names its code table. Kept as data
+#' rather than branches so adding a family is one entry, not five `if`s.
+AHRQ_LAYOUT <- list(
+  refined = list(dir = ".",    pattern = "^(CMR_Format_Program_|Comorb_ICD10CM_Format_).*\\.sas$",
+                 block = "COMFMT"),
+  beta    = list(dir = "beta", pattern = "^comformat_icd10cm_.*\\.txt$",
+                 block = "RCOMFMT")
+)
 
 #' Locate a release's format program under SAS_software/.
-format_program_path <- function(release, sas_dir) {
-  d <- file.path(sas_dir, release)
+format_program_path <- function(release, sas_dir, variant = "refined") {
+  lay <- AHRQ_LAYOUT[[variant]]
+  if (is.null(lay)) stop("unknown variant \"", variant, "\"", call. = FALSE)
+  d <- if (identical(lay$dir, ".")) file.path(sas_dir, release)
+       else file.path(sas_dir, lay$dir, release)
   if (!dir.exists(d)) stop("no such release directory: ", d, call. = FALSE)
-  f <- list.files(d, pattern = "^CMR_Format_Program_.*\\.sas$", full.names = TRUE)
+  f <- list.files(d, pattern = lay$pattern, full.names = TRUE)
   if (length(f) != 1L) {
-    stop("expected exactly one CMR_Format_Program_*.sas in ", d,
+    stop("expected exactly one format program matching ", lay$pattern, " in ", d,
          ", found ", length(f), call. = FALSE)
   }
   f
 }
+
+#' Parse all 24 MS-DRG screens from a beta format program.
+#'
+#' Returns a data.frame(screen, drg_low, drg_high) in file order.
+parse_drg_screens <- function(path) {
+  blocks <- sas_drg_blocks(read_sas_text(path))
+  missing <- setdiff(BETA_DRG_SCREEN_NAMES, names(blocks))
+  if (length(missing)) {
+    stop("missing MS-DRG screen(s) in ", path, ": ",
+         paste(missing, collapse = ", "), call. = FALSE)
+  }
+  extra <- setdiff(names(blocks), BETA_DRG_SCREEN_NAMES)
+  if (length(extra)) {
+    stop("unexpected numeric format block(s) in ", path, ": ",
+         paste(extra, collapse = ", "), call. = FALSE)
+  }
+
+  parts <- lapply(BETA_DRG_SCREEN_NAMES, function(nm) {
+    r <- drg_ranges(blocks[[nm]], nm)
+    data.frame(screen = nm, drg_low = r$drg_low, drg_high = r$drg_high,
+               stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, parts)
+  rownames(out) <- NULL
+  out
+}
+
+#' The 24 MS-DRG screen names, in the order the beta analysis program applies
+#' them. Every beta format program must define exactly these.
+BETA_DRG_SCREEN_NAMES <- c(
+  "CARDDRG", "PERIDRG", "CEREDRG", "NERVDRG", "PULMDRG", "DIABDRG",
+  "HYPODRG", "RENALDRG", "RENFDRG", "LIVERDRG", "ULCEDRG", "HIVDRG",
+  "LEUKDRG", "CANCDRG", "ARTHDRG", "NUTRDRG", "ANEMDRG", "ALCDRG",
+  "HTNCXDRG", "HTNDRG", "COAGDRG", "PSYDRG", "OBESEDRG", "DEPRSDRG"
+)
 
 #' The newest ICD-10-CM version a release covers.
 #'

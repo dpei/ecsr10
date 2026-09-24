@@ -76,3 +76,103 @@ test_that("build_poa_exempt_formats processes correctly", {
   # Clean up
   unlink(csv_file)
 })
+# ------------------------------------------------- version filtering ----
+#
+# `version` is an ICD-10-CM VERSION axis (33-43), NOT an AHRQ RELEASE axis
+# (2021.1-2026.1). The two are orthogonal, and conflating them is a real bug
+# class - one competing implementation ships exactly that defect. Release
+# selection happens in comorbidity(), never here.
+#
+# The filter was documented but inert until it was hoisted above the schema
+# reduction: transmute()/select() dropped version_min/version_max before the
+# `%in% names(df)` test could see them, so the branch was unreachable for BOTH
+# accepted schemas. These tests pin that it runs.
+
+version_df <- function() {
+  data.frame(
+    target      = c("EARLY", "LATE", "WINDOW", "OPEN"),
+    pattern     = c("E119",  "N183", "I10",    "K7031"),
+    version_min = c(33L,     40L,    35L,      NA),
+    version_max = c(43L,     43L,    38L,      NA),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("version filtering runs for the (target, pattern) schema", {
+  df <- version_df()
+
+  # LATE starts at 40, WINDOW ends at 38, OPEN is unbounded on both sides.
+  expect_setequal(ecsr10:::.comfmt_from_df(df, version = 33L)$target,
+                  c("EARLY", "OPEN"))
+  expect_setequal(ecsr10:::.comfmt_from_df(df, version = 36L)$target,
+                  c("EARLY", "WINDOW", "OPEN"))
+  expect_setequal(ecsr10:::.comfmt_from_df(df, version = 41L)$target,
+                  c("EARLY", "LATE", "OPEN"))
+})
+
+test_that("version filtering runs for the (code, comorbidity) schema", {
+  df <- version_df()
+  names(df)[names(df) == "target"]  <- "comorbidity"
+  names(df)[names(df) == "pattern"] <- "code"
+
+  expect_setequal(ecsr10:::.comfmt_from_df(df, version = 33L)$target,
+                  c("EARLY", "OPEN"))
+  expect_setequal(ecsr10:::.comfmt_from_df(df, version = 41L)$target,
+                  c("EARLY", "LATE", "OPEN"))
+})
+
+test_that("version bounds are inclusive at both endpoints", {
+  df <- version_df()
+
+  # WINDOW spans [35, 38]. Both endpoints in, both neighbours out.
+  expect_true("WINDOW" %in% ecsr10:::.comfmt_from_df(df, version = 35L)$target)
+  expect_true("WINDOW" %in% ecsr10:::.comfmt_from_df(df, version = 38L)$target)
+  expect_false("WINDOW" %in% ecsr10:::.comfmt_from_df(df, version = 34L)$target)
+  expect_false("WINDOW" %in% ecsr10:::.comfmt_from_df(df, version = 39L)$target)
+})
+
+test_that("a missing bound is open-ended on that side", {
+  df <- version_df()
+
+  # OPEN has NA on both limits, so it survives every version.
+  for (v in c(33L, 38L, 43L)) {
+    expect_true("OPEN" %in% ecsr10:::.comfmt_from_df(df, version = v)$target)
+  }
+})
+
+test_that("version = NULL keeps every row", {
+  df <- version_df()
+  expect_setequal(ecsr10:::.comfmt_from_df(df)$target,
+                  c("EARLY", "LATE", "WINDOW", "OPEN"))
+})
+
+test_that("version filtering is a no-op without version_min/version_max", {
+  # Which is the built-in case: comfmt_releases carries neither column, so
+  # release selection is entirely comorbidity()'s job and this filter must not
+  # touch the shipped tables.
+  df <- data.frame(target = c("A", "B"), pattern = c("E119", "N183"),
+                   stringsAsFactors = FALSE)
+
+  expect_equal(nrow(ecsr10:::.comfmt_from_df(df, version = 33L)), 2L)
+  expect_equal(ecsr10:::.comfmt_from_df(df, version = 33L),
+               ecsr10:::.comfmt_from_df(df))
+})
+
+test_that("the built-in release tables are unaffected by a version argument", {
+  built_in <- ecsr10:::.comfmt_for_release("2026.1")
+  expect_false(any(c("version_min", "version_max") %in% names(built_in)))
+  expect_equal(nrow(built_in), nrow(ecsr10:::.comfmt_from_df(built_in, version = 33L)))
+})
+
+test_that("build_comfmt_from_csv passes version through to the filter", {
+  skip_if_not_installed("readr")
+
+  csv <- tempfile(fileext = ".csv")
+  on.exit(unlink(csv), add = TRUE)
+  utils::write.csv(version_df(), csv, row.names = FALSE, na = "")
+
+  expect_setequal(build_comfmt_from_csv(csv, version = 33L)$target,
+                  c("EARLY", "OPEN"))
+  expect_setequal(build_comfmt_from_csv(csv)$target,
+                  c("EARLY", "LATE", "WINDOW", "OPEN"))
+})

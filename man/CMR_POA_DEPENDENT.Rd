@@ -5,7 +5,7 @@
 \alias{CMR_POA_DEPENDENT}
 \title{Targets assigned only when POA is absent, exempt, or "Y"/"W"}
 \format{
-An object of class \code{character} of length 19.
+An object of class \code{character} of length 20.
 }
 \usage{
 CMR_POA_DEPENDENT

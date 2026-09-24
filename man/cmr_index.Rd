@@ -31,10 +31,21 @@ The function applies validated weights to each comorbidity category:
     categories; all releases from v2023.1 onward agree
   \item Comorbidity columns absent from \code{core_data} are skipped rather than
     treated as an error, so a partially flagged frame yields a partial score
-  \item \code{NA} flags contribute 0
+  \item \code{NA} flags contribute 0. This is what makes a
+    \code{use_poa = FALSE} frame score the way AHRQ's SAS does: its index
+    program is POA-blind - one flat 38-element array summed with
+    \code{SUM(OF ...)}, which ignores missing terms - so with POA off both
+    indices silently cover only the 20 POA-neutral measures. They come back as
+    plausible small integers, not \code{NA}. Do not "fix" this to propagate
+    \code{NA}; it would break parity with the SAS program
   \item A zero-row frame returns zero rows with both index columns present
   \item Final scores are unweighted sums of individual comorbidity contributions
 }
+
+One residual difference from SAS, unreachable through \code{comorbidity()}:
+\code{SUM()} returns missing when \emph{every} term is missing, whereas this
+function returns 0. The 20 POA-neutral measures are always non-missing, so it
+can only be reached with a hand-built all-\code{NA} frame.
 }
 \examples{
 \dontrun{

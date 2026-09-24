@@ -5,7 +5,7 @@
 \alias{CMR_COMBO_TARGETS}
 \title{Combination targets, which fan out into component flags}
 \format{
-An object of class \code{character} of length 10.
+An object of class \code{character} of length 12.
 }
 \usage{
 CMR_COMBO_TARGETS

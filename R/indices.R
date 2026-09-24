@@ -33,10 +33,21 @@ CMR_MORTALITY_OVERRIDES <- list(
 #'     categories; all releases from v2023.1 onward agree
 #'   \item Comorbidity columns absent from \code{core_data} are skipped rather than
 #'     treated as an error, so a partially flagged frame yields a partial score
-#'   \item \code{NA} flags contribute 0
+#'   \item \code{NA} flags contribute 0. This is what makes a
+#'     \code{use_poa = FALSE} frame score the way AHRQ's SAS does: its index
+#'     program is POA-blind - one flat 38-element array summed with
+#'     \code{SUM(OF ...)}, which ignores missing terms - so with POA off both
+#'     indices silently cover only the 20 POA-neutral measures. They come back as
+#'     plausible small integers, not \code{NA}. Do not "fix" this to propagate
+#'     \code{NA}; it would break parity with the SAS program
 #'   \item A zero-row frame returns zero rows with both index columns present
 #'   \item Final scores are unweighted sums of individual comorbidity contributions
 #' }
+#'
+#' One residual difference from SAS, unreachable through \code{comorbidity()}:
+#' \code{SUM()} returns missing when \emph{every} term is missing, whereas this
+#' function returns 0. The 20 POA-neutral measures are always non-missing, so it
+#' can only be reached with a hand-built all-\code{NA} frame.
 #' @examples
 #' \dontrun{
 #' # After running comorbidity analysis
@@ -49,6 +60,42 @@ CMR_MORTALITY_OVERRIDES <- list(
 #' }
 #' @export
 cmr_index <- function(core_data, release = cmr_version()) {
+
+  # A beta result has no index at any release, and its CMRB_ columns would not
+  # be found by the weight lookup anyway - which would return a silent 0/0 rather
+  # than an error. Checked before .resolve_release() so the message names the
+  # real problem instead of complaining that "2020.1" is not a refined release.
+  scored_variant <- attr(core_data, "cmr_variant")
+  if (identical(scored_variant, "beta")) {
+    stop("these flags were produced by the AHRQ beta software (variant = ",
+         "\"beta\"), which has no comorbidity indices. AHRQ publishes the ",
+         "Elixhauser Comorbidity Indices only from v2021.1 onward, and only for ",
+         "the refined measures. Re-score with variant = \"refined\" to index.",
+         call. = FALSE)
+  }
+
+  # No index program exists for these, so applying some other release's weights
+  # would be inventing a result. AHRQ: the Elixhauser Comorbidity Indices Refined
+  # for ICD-10-CM "are not available until v2022.1".
+  #
+  # Checked BEFORE .resolve_release(), which validates against the refined list
+  # and would reject a beta label as an unknown release - technically true, and
+  # useless here, since its suggestion to "pass variant = \"beta\"" names an
+  # argument cmr_index() does not have.
+  if (is.character(release) && length(release) == 1L && !is.na(release) &&
+      release %in% CMR_NO_INDEX_RELEASES) {
+    stop("AHRQ ships no comorbidity index program for release \"", release, "\". ",
+         if (release %in% CMR_BETA_RELEASES) {
+           paste0("v", release, " is beta-era software, which emits flags only; ",
+                  "the Elixhauser Comorbidity Indices begin at v2022.1 and are ",
+                  "defined only over the refined measures.")
+         } else {
+           paste0("The Elixhauser Comorbidity Indices are not available until ",
+                  "v2022.1. Score the flags under \"", release, "\" if you need ",
+                  "that release's mapping, then index them explicitly with a ",
+                  "release that has weights, e.g. cmr_index(x, release = \"2022.1\").")
+         }, call. = FALSE)
+  }
 
   release <- .resolve_release(release)
 

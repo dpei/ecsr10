@@ -13,4 +13,8 @@ fiscal year \emph{Y}, and ICD-10-CM version numbering makes that \emph{Y} minus
 release's SAS mapping program: each one's \code{ICDVER} ladder is truncated
 here and its final \code{ELSE} assigns exactly this value.
 }
+\details{
+Refined releases only. The beta software has no POA-exempt lists and never
+resolves an ICD-10-CM version, so the beta pipeline must not reach this.
+}
 \keyword{internal}

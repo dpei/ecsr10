@@ -26,15 +26,24 @@ This package is based on the **Elixhauser Comorbidity Software Refined for ICD-1
 **Original SAS Program**: The official SAS software and documentation can be found at:
 [https://hcup-us.ahrq.gov/toolssoftware/comorbidityicd10/comorbidity_icd10.jsp](https://hcup-us.ahrq.gov/toolssoftware/comorbidityicd10/comorbidity_icd10.jsp)
 
-**Methodology**: This R package faithfully adapts the Present on Admission (POA) logic and 38 comorbidity conditions as specified in the AHRQ documentation, translating the SAS workflow into R while maintaining the same clinical logic and hierarchical exclusion rules. Compared with the original Elixhauser comorbidity, the number of comorbidity measures in this implementation increases from 29 to 38, with three measures added, five measures modified to create 12 more specific measures, and one measure discontinued. This program uses POA indicators for 18 of the 38 comorbidity measures.
+**Methodology**: This R package faithfully adapts the Present on Admission (POA) logic and 38 comorbidity conditions as specified in the AHRQ documentation, translating the SAS workflow into R while maintaining the same clinical logic and hierarchical exclusion rules. Compared with the original Elixhauser comorbidity, the number of comorbidity measures in this implementation increases from 29 to 38, with three measures added, five measures modified to create 12 more specific measures, and one measure discontinued. This program uses POA indicators for 18 of the 38 comorbidity measures. Running without them (`use_poa = FALSE`) returns those 18 as `NA`, which is what the SAS program emits under `%LET POA = 0`; the remaining 20 and both indices are scored as usual.
 
-**Implemented releases**: **v2022.1 through v2026.1**, selectable per call. The default is
-**v2026.1** (released October 2025), covering ICD-10-CM diagnosis codes from October 2015 through
-September 2026 — ICD-10-CM versions 33 through 43.
+**Implemented releases**: both families AHRQ has published, selectable per call.
+
+| variant | releases | measures | screened on | indices |
+|---|---|---|---|---|
+| `"refined"` (default) | v2021.1 - v2026.1 | 38 | POA, for 18 of them | v2022.1 on |
+| `"beta"` | v2016.2 - v2020.1 | 30 + `CMRB_HTN_C` | MS-DRG | none |
+
+The default is **refined v2026.1** (released October 2025). Together the two families cover
+ICD-10-CM diagnosis codes from October 2015 through September 2026 - ICD-10-CM versions 33 to 43.
 
 ``` r
 cmr_releases()
-#> [1] "2022.1" "2023.1" "2024.1" "2025.1" "2026.1"
+#> [1] "2021.1" "2022.1" "2023.1" "2024.1" "2025.1" "2026.1"
+
+cmr_releases("beta")
+#> [1] "2016.2" "2017.2" "2018.1" "2019.2" "2020.1"
 
 cmr_version()   # the default
 #> [1] "2026.1"
@@ -45,17 +54,43 @@ res <- cmr_index(res, release = "2023.1")
 ```
 
 The release selects the diagnosis-code table, the newest ICD-10-CM version reachable from
-year/quarter, and the index weights. It is recorded on the result as the `cmr_release` attribute,
-and `cmr_index()` warns if you index flags from one release with another's weights. Report the
-release alongside any published results — the same patient can flag differently across releases.
+year/quarter, and the index weights. It is recorded on the result as the `cmr_release` attribute
+(and the family as `cmr_variant`), and `cmr_index()` warns if you index flags from one release with
+another's weights. Report the release alongside any published results — the same patient can flag
+differently across releases.
 
-Every supported release reproduces AHRQ's own SAS output exactly: 167,322 encounters covering
-81,212 distinct diagnosis codes, all 38 flags and both index scores, zero differing cells. See
-`simulation/ahrq_releases/`.
+Every supported release reproduces AHRQ's own SAS output exactly. See `simulation/ahrq_releases/`
+(167,322 encounters, v2022.1-v2026.1), `simulation/multi_release/` (11,954 encounters over 67
+discharge-date cells, v2021.1-v2026.1) and `simulation/beta_releases/` (6,018 encounters over 556
+MS-DRGs, v2016.2-v2020.1) — zero differing cells in all of them.
 
-v2021.1 is not supported. It is structurally different software — measures named `ARTH`/`CHF`
-rather than `AUTOIMMUNE`/`HF`, no `CMR_` output prefix, and no index program at all (AHRQ: the
-Indices "are not available until v2022.1").
+### Two things that differ at v2021.1
+
+v2021.1 is the first *Refined* release, and it predates two conventions the later ones share:
+
+- **It names two measures differently.** `CMR_ARTH` and `CMR_CHF`, which v2022.1 renamed to
+  `CMR_AUTOIMMUNE` and `CMR_HF`. `comorbidity()` emits v2021.1's own spelling, so code that
+  hardcodes either pair must branch on the release. Nothing else about the 38 measures changed —
+  AHRQ's changelog records no measure added, redefined or discontinued at that boundary.
+- **It has no comorbidity indices.** AHRQ states they "are not available until v2022.1", so
+  `cmr_index()` refuses the release rather than applying some other release's weights.
+
+### The beta family
+
+v2016.2 - v2020.1 are the *beta* Elixhauser Comorbidity Software — superseded software, not merely
+older tables. They have no POA concept at all; in its place they apply an **MS-DRG exclusion
+screen**, suppressing a comorbidity when the encounter's MS-DRG is directly related to the principal
+diagnosis. Output columns carry a `CMRB_` prefix, because several beta measure names coincide with
+refined ones while meaning something different (beta `CHF` is DRG-screened where refined `CMR_HF` is
+POA-screened).
+
+``` r
+res <- comorbidity(patient_data, dx_cols,
+                   variant = "beta", release = "2020.1", drg_col = "drg")
+```
+
+Use the refined software unless you are specifically reproducing a pre-2021 analysis; AHRQ's own
+advice is to use the most recent version of the tool.
 
 ## Installation
 
@@ -74,17 +109,30 @@ library(ecsr10)
 # Load your patient diagnosis data
 # patient_data <- read_csv("your_patient_data.csv")
 
-# Apply comorbidity analysis
-# The input should NOT contain the primary diagnosis. It should only contain secondary diagnosis.
-# Alternatively, you may specify secondary diagnosis in dx_cols parameter in the comorbidity function.
-# result <- comorbidity(patient_data, 
-#                       dx_cols = c("dx1", "dx2", "dx3"),
-#                       poa_cols = c("poa1", "poa2", "poa3"),
+# Apply comorbidity analysis.
+#
+# SECONDARY DIAGNOSES ONLY. The AHRQ software opens its diagnosis loop at
+# position 2 (`DO I = 2 TO ...`), so the principal diagnosis is never examined.
+# ecsr10 scores every column you hand it, so leave dx1/poa1 out of dx_cols and
+# poa_cols - passing them changes flags rather than erroring, and draws a warning.
+# result <- comorbidity(patient_data,
+#                       dx_cols  = c("dx2", "dx3", "dx4"),
+#                       poa_cols = c("poa2", "poa3", "poa4"),
 #                       ...)
 
 # Calculate risk indices
 # result_with_indices <- cmr_index(result)
 ```
+
+`dx_cols` and `poa_cols` are paired by the **first run of digits in each column
+name**, not by position in the two vectors, and the two position sets must match
+exactly. `dx3` paired with `poa4` is an error, not a silent blank POA; so are
+duplicate positions, which is what HCUP's own `I10_DX2`/`I10_DX3` produce (both
+resolve to 10). Use names whose only digits are the position.
+
+ecsr10 does not apply the encounter's `I10_NDX` diagnosis count either — SAS caps
+its loop there, so a populated column past that count is ignored. Truncate
+`dx_cols` yourself if your data carries a meaningful count.
 
 ### Parallel execution
 
@@ -104,8 +152,11 @@ how high you can set it.
 Values above `parallel::detectCores()` are clamped with a warning. Forking is
 unavailable on Windows, where any `ncores > 1` falls back to serial with a warning.
 
-To measure `ncores` on your own hardware and data, use
-`simulation/large_data/benchmark_ncores.R`.
+Speedup is machine- and data-specific, so measure it on your own hardware rather than
+relying on a published figure, and give each core count a fresh R process — a grid walked
+inside one process reports spuriously flat speedups for its later cells. This repository's
+benchmark, over a real discharge cohort, is `application/code/benchmark_ncores.R`, which
+`cd application && ./run_all.sh` runs as part of the pipeline (`--no-benchmark` skips it).
 
 ## Data Requirements
 

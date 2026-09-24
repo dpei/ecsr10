@@ -2,21 +2,28 @@
 % Please edit documentation in R/utils.R
 \name{cmr_releases}
 \alias{cmr_releases}
-\title{AHRQ CMR releases supported by this package}
+\title{AHRQ comorbidity software releases supported by this package}
 \usage{
-cmr_releases()
+cmr_releases(variant = c("refined", "beta", "all"))
+}
+\arguments{
+\item{variant}{Which family to list: \code{"refined"} (the default; the
+Elixhauser Comorbidity Software \emph{Refined} for ICD-10-CM, v2021.1
+onward), \code{"beta"} (the superseded beta software, v2016.2-v2020.1), or
+\code{"all"} for both, oldest first.}
 }
 \value{
-Character vector of release labels, e.g. \code{c("2022.1", ...)}.
+Character vector of release labels, e.g. \code{c("2021.1", ...)}.
 }
 \description{
-The AHRQ/HCUP "Elixhauser Comorbidity Software Refined for ICD-10-CM" releases
-that \code{\link{comorbidity}} and \code{\link{cmr_index}} can score with,
-oldest first. Any one of these is valid as their \code{release} argument.
+The AHRQ/HCUP releases \code{\link{comorbidity}} can score with, oldest first.
+Any one of these is valid as its \code{release} argument, given the matching
+\code{variant}.
 }
 \examples{
 cmr_releases()
+cmr_releases("beta")
 }
 \seealso{
-\code{\link{cmr_version}} for the default.
+\code{\link{cmr_version}} for the default of each family.
 }

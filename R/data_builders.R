@@ -27,6 +27,27 @@ build_comfmt_from_csv <- function(format_csv_path, version = NULL, mode = "wildc
 .comfmt_from_df <- function(df, version = NULL) {
   df <- janitor::clean_names(df)
 
+  # Optional version filtering if version_min/version_max exist.
+  #
+  # This runs BEFORE the schema is reduced to (target, pattern). Reducing first -
+  # which transmute()/select() below both do - drops version_min/version_max, so
+  # the `%in% names(df)` test could never be TRUE and the filter never ran for
+  # either accepted schema. The `version` argument was documented but inert.
+  #
+  # NOTE: this is an ICD-10-CM VERSION axis (33-43), not an AHRQ RELEASE axis
+  # (2022.1-2026.1). The two are orthogonal, and conflating them is a real bug
+  # class - one competing implementation ships exactly that defect. Release
+  # selection happens in comorbidity(), not here.
+  if (!is.null(version) && all(c("version_min", "version_max") %in% names(df))) {
+    version <- as.integer(version)
+    # Bounds are inclusive, and an absent limit is open-ended on that side.
+    # -Inf/Inf rather than a sentinel integer so the comparison stays honest for
+    # any ICD version, and coalesce()'s common type resolves to double.
+    keep_min <- dplyr::coalesce(suppressWarnings(as.integer(df$version_min)), -Inf)
+    keep_max <- dplyr::coalesce(suppressWarnings(as.integer(df$version_max)),  Inf)
+    df <- df[version >= keep_min & version <= keep_max, , drop = FALSE]
+  }
+
   # Accept either: (code, comorbidity) or (target, pattern)
   if (all(c("code", "comorbidity") %in% names(df))) {
     df <- df %>% dplyr::transmute(target = .data$comorbidity, pattern = .data$code)
@@ -34,21 +55,6 @@ build_comfmt_from_csv <- function(format_csv_path, version = NULL, mode = "wildc
     df <- df %>% dplyr::select(target, pattern)
   } else {
     stop("Lookup CSV must have columns (code, comorbidity) or (target, pattern).")
-  }
-
-  # Optional version filtering if version_min/version_max exist.
-  #
-  # NOTE: this is an ICD-10-CM VERSION axis (33-43), not an AHRQ RELEASE axis
-  # (2022.1-2026.1). The two are orthogonal, and conflating them is a real bug
-  # class - one competing implementation ships exactly that defect. Release
-  # selection happens in comorbidity(), not here.
-  if (!is.null(version) && all(c("version_min", "version_max") %in% names(df))) {
-    df <- df %>%
-      dplyr::mutate(
-        version_min = dplyr::coalesce(as.integer(version_min), -Inf),
-        version_max = dplyr::coalesce(as.integer(version_max), Inf)
-      ) %>%
-      dplyr::filter(version >= version_min, version <= version_max)
   }
 
   df %>% dplyr::distinct()

@@ -4,11 +4,17 @@
 \alias{.resolve_release}
 \title{Validate an AHRQ release argument}
 \usage{
-.resolve_release(release)
+.resolve_release(release, variant = "refined")
 }
 \description{
 Internal. Returns the release unchanged, or errors naming the valid set. A
 typo'd release must never fall through to the default, because scoring under
 the wrong release fails silently - unmapped codes simply do not flag.
+}
+\details{
+Release labels do not overlap between the two families, so a release given
+under the wrong variant is caught here; the error says which family the label
+does belong to rather than just listing the valid set, because "2020.1 is not
+a release" is a confusing thing to be told about a release that exists.
 }
 \keyword{internal}

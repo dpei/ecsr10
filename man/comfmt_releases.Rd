@@ -5,10 +5,10 @@
 \alias{comfmt_releases}
 \title{ICD-10-CM to Comorbidity Mapping, by AHRQ Release}
 \format{
-A data frame with 3 columns and 22323 rows:
+A data frame with 3 columns and 26818 rows:
 \describe{
   \item{release}{Character. AHRQ CMR release label, one of
-                 \code{\link{cmr_releases}()}: "2022.1" ... "2026.1".}
+                 \code{\link{cmr_releases}()}: "2021.1" ... "2026.1".}
   \item{code}{Character. ICD-10-CM diagnosis code. Codes are exact; the matcher
               also supports \code{\%} wildcards, but no shipped release uses them.}
   \item{comorbidity}{Character. Target comorbidity category, including the
@@ -32,6 +32,7 @@ this via its \code{release} argument.
 Rows per release, reflecting AHRQ's annual additions:
 \tabular{lrrr}{
   \strong{release} \tab \strong{codes} \tab \strong{targets} \tab \strong{newest ICD-10-CM version} \cr
+  2021.1 \tab 4495 \tab 45 \tab 38 \cr
   2022.1 \tab 4319 \tab 46 \tab 39 \cr
   2023.1 \tab 4432 \tab 47 \tab 40 \cr
   2024.1 \tab 4463 \tab 47 \tab 41 \cr
@@ -39,14 +40,22 @@ Rows per release, reflecting AHRQ's annual additions:
   2026.1 \tab 4567 \tab 49 \tab 43 \cr
 }
 
-Target sets are purely additive across these releases - AHRQ has never retired
+Target sets are purely additive from v2022.1 onward - AHRQ has never retired
 one - which is why the combination rules and category vectors in the scoring
-pipeline are release-blind. Code sets are \emph{not} nested, however: v2023.1
-dropped O9081, O9902 and O9903, and v2026.1 dropped R939. Do not assume an
-older release's codes are a subset of a newer one's.
+pipeline are release-blind. The single exception is v2021.1 to v2022.1, and it
+is a \emph{rename}, not a retirement: \code{ARTH} became \code{AUTOIMMUNE},
+\code{CHF} became \code{HF}, and the two combination targets embedding
+\code{CHF} moved with them. This table stores each release's own spelling.
 
-The number of output columns does not vary: every release yields the same 38
+Code sets are \emph{not} nested: v2022.1 dropped 202 codes when \code{ARTH}
+was redefined as \code{AUTOIMMUNE}, v2023.1 dropped O9081, O9902 and O9903,
+and v2026.1 dropped R939. Do not assume an older release's codes are a subset
+of a newer one's.
+
+The number of output columns does not vary: every release yields 38
 \code{CMR_*} flags, with categories a release does not define left at zero.
+Two of those columns are \emph{named} differently at v2021.1 -
+\code{CMR_ARTH} and \code{CMR_CHF} - matching that release's own SAS output.
 
 Each release slice is sorted by code, and codes are unique within a release.
 

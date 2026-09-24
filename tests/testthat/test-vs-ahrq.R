@@ -39,6 +39,15 @@ CMR_FLAGS <- grep("^CMR_", names(ahrq), value = TRUE)
 CMR_FLAGS <- setdiff(CMR_FLAGS, c("CMR_VERSION", "CMR_Index_Readmission",
                                   "CMR_Index_Mortality"))
 
+# The arms this corpus can gate, which is NOT cmr_releases(). The vendored file
+# starts at v2022.1 because `medicalcoder` has no v2021.1 method to build one
+# from, and it is a third-party artifact this package does not regenerate - so
+# the arm list is derived from the file rather than asserted against the package.
+#
+# v2021.1's own parity gate is test-vs-ahrq-2021.R, against SAS output this
+# repository generates. Do not "fix" the intersect below by adding rows here.
+CORPUS_RELEASES <- intersect(cmr_releases(), unique(ahrq$release))
+
 # Only DX1-DX3 carry data, and DX1 is the placeholder "acode" - never a real
 # code - which matches the CMR rule that the primary diagnosis is excluded.
 ahrq_input <- function(ref) {
@@ -64,17 +73,18 @@ score <- function(ref, rel) {
 # Score each release once and share it between the flag and index tests - the
 # pipeline is the expensive part and running it twice doubles the suite for
 # nothing.
-REF    <- lapply(cmr_releases(), function(r) ahrq[ahrq$release == r, ])
-SCORED <- Map(score, REF, cmr_releases())
-names(REF) <- names(SCORED) <- cmr_releases()
+REF    <- lapply(CORPUS_RELEASES, function(r) ahrq[ahrq$release == r, ])
+SCORED <- Map(score, REF, CORPUS_RELEASES)
+names(REF) <- names(SCORED) <- CORPUS_RELEASES
 
 test_that("the vendored AHRQ corpus has the shape the tests assume", {
   expect_equal(nrow(ahrq), 5870L)
-  expect_setequal(unique(ahrq$release), cmr_releases())
+  expect_setequal(unique(ahrq$release), CORPUS_RELEASES)
+  expect_setequal(CORPUS_RELEASES, setdiff(cmr_releases(), "2021.1"))
   expect_length(CMR_FLAGS, 38L)
   # Every row sits at Q4 of its own release year, one ICD version per release.
   per <- unique(ahrq[, c("release", "YEAR", "DQTR", "ICDVER")])
-  expect_equal(nrow(per), length(cmr_releases()))
+  expect_equal(nrow(per), length(CORPUS_RELEASES))
   expect_true(all(per$DQTR == 4L))
   expect_equal(per$YEAR, as.integer(substr(per$release, 1, 4)))
   # PATID repeats across releases, so anything joining must key on both.
@@ -82,7 +92,7 @@ test_that("the vendored AHRQ corpus has the shape the tests assume", {
 })
 
 test_that("determine_icd_version reproduces the SAS ICDVER, per release", {
-  for (rel in cmr_releases()) {
+  for (rel in CORPUS_RELEASES) {
     ref <- ahrq[ahrq$release == rel, ]
     got <- determine_icd_version(ref$YEAR, ref$DQTR,
                                  .release_max_icd_version(rel))
@@ -91,7 +101,7 @@ test_that("determine_icd_version reproduces the SAS ICDVER, per release", {
 })
 
 test_that("comorbidity() reproduces AHRQ SAS flags for every release", {
-  for (rel in cmr_releases()) {
+  for (rel in CORPUS_RELEASES) {
     ref <- REF[[rel]]
     res <- SCORED[[rel]]
 
@@ -108,7 +118,7 @@ test_that("comorbidity() reproduces AHRQ SAS flags for every release", {
 })
 
 test_that("cmr_index() reproduces AHRQ SAS index scores for every release", {
-  for (rel in cmr_releases()) {
+  for (rel in CORPUS_RELEASES) {
     ref <- REF[[rel]]
     res <- cmr_index(SCORED[[rel]], release = rel)
 
@@ -145,10 +155,21 @@ test_that("HCUP-style dx column names are rejected rather than silently unpaired
     I10_DX3 = ref$I10_DX3, DXPOA3 = ref$DXPOA3,
     stringsAsFactors = FALSE
   )
+  # I10_DX2 and I10_DX3 both resolve to position 10 - the FIRST digit run wins -
+  # so this trips the duplicate-position check before the unequal-set one. Either
+  # way it must not reach the pipeline: with DXPOA2/DXPOA3 at positions 2 and 3,
+  # nothing pairs and every POA-dependent measure would quietly stop firing.
   expect_error(
     comorbidity(hcup, dx_cols = c("I10_DX2", "I10_DX3"),
                 poa_cols = c("DXPOA2", "DXPOA3"),
                 year_col = "year", quarter_col = "qtr"),
-    "no dx/POA column pairs"
+    "duplicate diagnosis position"
+  )
+  # The message must still carry the fix, which is the naming rule.
+  expect_error(
+    comorbidity(hcup, dx_cols = c("I10_DX2", "I10_DX3"),
+                poa_cols = c("DXPOA2", "DXPOA3"),
+                year_col = "year", quarter_col = "qtr"),
+    "resolve to 10, not 2"
   )
 })

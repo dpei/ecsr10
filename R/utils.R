@@ -1,48 +1,95 @@
-# The AHRQ CMR releases this package can score with, oldest first. The last
-# element is the default. Adding next year's release means appending here and
-# regenerating comfmt_releases - see data-raw/README.md.
+# The AHRQ CMR releases this package can score with, oldest first. The LAST
+# element of each vector is that family's default, so a newly published release
+# is APPENDED and an older one PREPENDED - see data-raw/README.md.
 #
-# v2021.1 is deliberately absent: it is structurally different software (two SAS
-# programs rather than three, measures named ARTH/CHF rather than AUTOIMMUNE/HF,
-# six combination targets, no CMR_ output prefix, and no index program at all),
-# and no independent reference exists to validate a translation of it against.
-CMR_RELEASES <- c("2022.1", "2023.1", "2024.1", "2025.1", "2026.1")
+# Two families, because AHRQ shipped two different pieces of software:
+#
+#   refined  v2021.1 onward. 38 measures, 18 of them gated on POA. v2021.1 is
+#            the first Refined release; v2022.1 renamed two of its measures
+#            (ARTH -> AUTOIMMUNE, CHF -> HF) and added the comorbidity indices.
+#   beta     v2016.2 - v2020.1. 30 measures plus a derived HTN_C, no POA at all,
+#            and an MS-DRG screen that suppresses comorbidities related to the
+#            principal diagnosis. Superseded, not merely older.
+CMR_RELEASES      <- c("2021.1", "2022.1", "2023.1", "2024.1", "2025.1", "2026.1")
+CMR_BETA_RELEASES <- c("2016.2", "2017.2", "2018.1", "2019.2", "2020.1")
 
-#' AHRQ CMR releases supported by this package
-#'
-#' The AHRQ/HCUP "Elixhauser Comorbidity Software Refined for ICD-10-CM" releases
-#' that \code{\link{comorbidity}} and \code{\link{cmr_index}} can score with,
-#' oldest first. Any one of these is valid as their \code{release} argument.
-#'
-#' @return Character vector of release labels, e.g. \code{c("2022.1", ...)}.
-#' @seealso \code{\link{cmr_version}} for the default.
-#' @examples
-#' cmr_releases()
-#' @export
-cmr_releases <- function() {
-  CMR_RELEASES
+# Releases AHRQ ships no index program for. The Elixhauser Comorbidity Indices
+# Refined for ICD-10-CM "are not available until v2022.1" (AHRQ), and the beta
+# software emits flags only. cmr_index() refuses these rather than quietly
+# scoring them with some other release's weights.
+CMR_NO_INDEX_RELEASES <- c("2021.1", CMR_BETA_RELEASES)
+
+CMR_VARIANTS <- c("refined", "beta")
+
+#' Internal. Releases belonging to one variant. `variant = "all"` concatenates.
+#' @keywords internal
+.releases_for_variant <- function(variant) {
+  switch(variant,
+         refined = CMR_RELEASES,
+         beta    = CMR_BETA_RELEASES,
+         all     = c(CMR_BETA_RELEASES, CMR_RELEASES),
+         stop("`variant` must be one of: refined, beta, all", call. = FALSE))
 }
 
-#' Default AHRQ CMR release
+#' AHRQ comorbidity software releases supported by this package
+#'
+#' The AHRQ/HCUP releases \code{\link{comorbidity}} can score with, oldest first.
+#' Any one of these is valid as its \code{release} argument, given the matching
+#' \code{variant}.
+#'
+#' @param variant Which family to list: \code{"refined"} (the default; the
+#'   Elixhauser Comorbidity Software \emph{Refined} for ICD-10-CM, v2021.1
+#'   onward), \code{"beta"} (the superseded beta software, v2016.2-v2020.1), or
+#'   \code{"all"} for both, oldest first.
+#' @return Character vector of release labels, e.g. \code{c("2021.1", ...)}.
+#' @seealso \code{\link{cmr_version}} for the default of each family.
+#' @examples
+#' cmr_releases()
+#' cmr_releases("beta")
+#' @export
+cmr_releases <- function(variant = c("refined", "beta", "all")) {
+  .releases_for_variant(match.arg(variant))
+}
+
+#' Default AHRQ release
 #'
 #' Returns the release \code{\link{comorbidity}} and \code{\link{cmr_index}} use
 #' when their \code{release} argument is not given - the newest one this package
-#' ships tables for. Pass \code{release =} explicitly to score under an older one;
-#' \code{\link{cmr_releases}} lists the choices.
+#' ships tables for, within the requested family. Pass \code{release =}
+#' explicitly to score under an older one; \code{\link{cmr_releases}} lists the
+#' choices.
 #'
 #' This is the analogue of the \code{CMR_VERSION} macro variable the SAS program
 #' stamps onto every output row. It is exposed as a function rather than an output
 #' column, so \code{comorbidity()}'s result schema is unaffected. The release a
 #' particular result was scored under is recorded on it as the \code{cmr_release}
-#' attribute.
+#' attribute, and the family as \code{cmr_variant}.
 #'
+#' @param variant \code{"refined"} (default) or \code{"beta"}.
 #' @return Character scalar, e.g. \code{"2026.1"}.
 #' @seealso \code{\link{cmr_releases}}
 #' @examples
 #' cmr_version()
+#' cmr_version("beta")
 #' @export
-cmr_version <- function() {
-  CMR_RELEASES[[length(CMR_RELEASES)]]
+cmr_version <- function(variant = c("refined", "beta")) {
+  rel <- .releases_for_variant(match.arg(variant))
+  rel[[length(rel)]]
+}
+
+#' Validate a variant argument
+#'
+#' Internal. Unlike \code{match.arg()}, this accepts an already-resolved scalar,
+#' so callers can pass either the default vector or a user's single value.
+#' @keywords internal
+.resolve_variant <- function(variant) {
+  if (identical(variant, CMR_VARIANTS)) return("refined")
+  if (!is.character(variant) || length(variant) != 1L || is.na(variant) ||
+      !variant %in% CMR_VARIANTS) {
+    stop("`variant` must be one of: ", paste(CMR_VARIANTS, collapse = ", "),
+         call. = FALSE)
+  }
+  variant
 }
 
 #' Validate an AHRQ release argument
@@ -50,15 +97,27 @@ cmr_version <- function() {
 #' Internal. Returns the release unchanged, or errors naming the valid set. A
 #' typo'd release must never fall through to the default, because scoring under
 #' the wrong release fails silently - unmapped codes simply do not flag.
+#'
+#' Release labels do not overlap between the two families, so a release given
+#' under the wrong variant is caught here; the error says which family the label
+#' does belong to rather than just listing the valid set, because "2020.1 is not
+#' a release" is a confusing thing to be told about a release that exists.
 #' @keywords internal
-.resolve_release <- function(release) {
+.resolve_release <- function(release, variant = "refined") {
+  valid <- .releases_for_variant(variant)
   if (!is.character(release) || length(release) != 1L || is.na(release)) {
     stop("`release` must be a single non-NA character string; one of: ",
-         paste(CMR_RELEASES, collapse = ", "), call. = FALSE)
+         paste(valid, collapse = ", "), call. = FALSE)
   }
-  if (!release %in% CMR_RELEASES) {
-    stop("unsupported AHRQ release \"", release, "\"; must be one of: ",
-         paste(CMR_RELEASES, collapse = ", "), call. = FALSE)
+  if (!release %in% valid) {
+    other <- setdiff(CMR_VARIANTS, variant)
+    hint <- if (release %in% .releases_for_variant(other)) {
+      paste0("\n  \"", release, "\" is a ", other,
+             " release; pass variant = \"", other, "\" to use it.")
+    } else ""
+    stop("unsupported AHRQ ", variant, " release \"", release,
+         "\"; must be one of: ", paste(valid, collapse = ", "), hint,
+         call. = FALSE)
   }
   release
 }
@@ -70,6 +129,9 @@ cmr_version <- function() {
 #' 1983 (v33 = FY2016 ... v43 = FY2026). Verified against every supported
 #' release's SAS mapping program: each one's \code{ICDVER} ladder is truncated
 #' here and its final \code{ELSE} assigns exactly this value.
+#'
+#' Refined releases only. The beta software has no POA-exempt lists and never
+#' resolves an ICD-10-CM version, so the beta pipeline must not reach this.
 #' @keywords internal
 .release_max_icd_version <- function(release) {
   as.integer(substr(release, 1L, 4L)) - 1983L

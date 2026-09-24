@@ -10,32 +10,66 @@ comorbidity(
   poa_cols = NULL,
   year_col = "year",
   quarter_col = "quarter",
-  release = cmr_version(),
+  release = NULL,
   comfmt = NULL,
   poa_exempt = NULL,
   use_poa = TRUE,
   wildcard_mode = "wildcard",
-  ncores = 1
+  ncores = 1,
+  variant = c("refined", "beta"),
+  drg_col = NULL
 )
 }
 \arguments{
 \item{patient_data}{Data frame containing patient diagnosis data}
 
-\item{dx_cols}{Character vector of column names containing diagnosis codes}
+\item{dx_cols}{Character vector of column names containing diagnosis codes.
 
-\item{poa_cols}{Character vector of column names containing POA indicators (optional)}
+  \strong{Secondary diagnoses only.} The AHRQ software opens its diagnosis
+  loop at position 2 - \code{DO I = 2 TO MIN(&MAXNDX,&NUMDX)} in the refined
+  mapping program, \code{DO I = 2 TO MIN(NDX,&NUMDX)} in the beta one - so the
+  principal diagnosis is never examined. ecsr10 scores every column it is
+  handed, which makes the exclusion the caller's job: pass \code{dx2},
+  \code{dx3}, ... and not \code{dx1}. A column whose name resolves to position
+  1 draws a warning, since including it changes flags rather than erroring.
+
+  The encounter-level diagnosis count is \emph{not} applied either. SAS caps
+  its loop at \code{I10_NDX}, so a populated column past that count is
+  ignored; ecsr10 scores every column in \code{dx_cols} regardless. Truncate
+  \code{dx_cols} yourself if your data carries a meaningful \code{I10_NDX}.}
+
+\item{poa_cols}{Character vector of column names containing POA indicators
+  (optional). Must be the same length as \code{dx_cols}.
+
+  \strong{Paired with \code{dx_cols} by name, not by vector order.} Each
+  column is assigned a diagnosis position from the \emph{first run of digits}
+  in its name, and a diagnosis is matched to the POA column sharing its
+  position - so \code{c("poa3", "poa2")} pairs exactly as \code{c("poa2",
+  "poa3")} does. The two position sets must be identical; a partial mismatch
+  such as \code{dx_cols = c("dx2", "dx3")} with \code{poa_cols = c("poa2",
+  "poa4")} is an error, because position 3 would otherwise receive a blank POA
+  value and silently stop flagging every POA-dependent measure. Names yielding
+  no digits, or duplicate positions - HCUP's own \code{I10_DX2}/\code{I10_DX3}
+  both resolve to 10 - are rejected for the same reason. Use names whose only
+  digits are the position, e.g. \code{dx2}/\code{poa2}.}
 
 \item{year_col}{Character, name of column containing year information (default "year")}
 
 \item{quarter_col}{Character, name of column containing quarter information (default "quarter")}
 
-\item{release}{Character, which AHRQ CMR release to score with (default
-\code{cmr_version()}, the newest available). See \code{\link{cmr_releases}}
-for the supported set. The release selects the diagnosis-code table, the
-newest ICD-10-CM version reachable from year/quarter, and - via
-\code{\link{cmr_index}} - the index weights. It is recorded on the result as
-the \code{cmr_release} attribute. An explicit \code{comfmt} overrides only
-the code table; the release's ICD-version cap still applies.}
+\item{release}{Character, which AHRQ release to score with. \code{NULL}
+  (default) means \code{cmr_version(variant)} - the newest release of the
+  selected family. See \code{\link{cmr_releases}} for the supported set;
+  labels do not overlap between families, so a release given under the wrong
+  \code{variant} is rejected with a message saying which family it belongs to.
+
+  For \code{variant = "refined"} the release selects the diagnosis-code table,
+  the newest ICD-10-CM version reachable from year/quarter, and - via
+  \code{\link{cmr_index}} - the index weights. For \code{variant = "beta"} it
+  selects the code table and the MS-DRG screens. It is recorded on the result
+  as the \code{cmr_release} attribute, alongside \code{cmr_variant}. An
+  explicit \code{comfmt} overrides only the code table; the release's
+  ICD-version cap still applies.}
 
 \item{comfmt}{Data frame with comorbidity format containing "target" and "pattern" columns.
 If NULL (default), uses the built-in table for \code{release}.}
@@ -43,7 +77,20 @@ If NULL (default), uses the built-in table for \code{release}.}
 \item{poa_exempt}{Named list of POA exempt codes by version. If NULL (default),
 uses the built-in poaxmpt_codes_long data when use_poa is TRUE.}
 
-\item{use_poa}{Logical, whether to apply POA logic (default TRUE)}
+\item{use_poa}{Logical, whether to apply POA logic (default TRUE). \code{TRUE}
+  requires \code{year_col} and \code{quarter_col}, which select the ICD-10-CM
+  version and hence the POA-exemption list.
+
+  \code{FALSE} is the analogue of the SAS \code{\%LET POA = 0} switch, and it
+  is not merely "POA ignored": 18 of the 38 measures are defined only in terms
+  of POA, so they are not scoreable at all. They are returned as \code{NA}
+  rather than 0, reproducing AHRQ's SAS (which initializes them only inside
+  \code{\%if &POA.=1}, so with the switch off they reach the output dataset
+  missing; the columns stay present, so the schema is unchanged), and the
+  exclusions that depend on them (the liver and renal-failure hierarchies, and the whole \code{CMR_CBVD}
+  derivation) do not run, matching the SAS program, which puts those rules
+  inside its POA branch. \code{\link{cmr_index}} then scores only the 20
+  POA-neutral measures.}
 
 \item{wildcard_mode}{Character, pattern matching mode ("wildcard" or "regex")}
 
@@ -62,17 +109,54 @@ uses the built-in poaxmpt_codes_long data when use_poa is TRUE.}
   Peak memory grows with \code{ncores} - each worker materializes its own
   long-format intermediate - so memory, not core count, is usually the
   binding constraint on large inputs.}
+
+\item{variant}{Character, which AHRQ software family to apply: \code{"refined"}
+(default) or \code{"beta"}. See the description above; the two produce
+different output columns and are not interchangeable.}
+
+\item{drg_col}{Character, name of the column holding the encounter's MS-DRG.
+\code{variant = "beta"} only, where it drives the MS-DRG exclusion screen.
+\code{NULL} (default) runs with no screen and warns: that is faithful - the
+SAS program applies no suppression when \code{DRG} is missing, since
+\code{PUT(DRG, <screen>.)} cannot then return \code{"YES"} - but it is
+almost never what an inpatient analysis wants, so it is surfaced.}
 }
 \value{
-Data frame with original patient diagnosis data plus 38 CMR comorbidity flags
+Data frame with the original patient diagnosis data plus, for
+  \code{variant = "refined"}, 38 \code{CMR_*} flags, or for
+  \code{variant = "beta"}, 31 \code{CMRB_*} flags. Flags are 0/1 integers -
+  except the 18 POA-dependent measures under \code{use_poa = FALSE}, which are
+  \code{NA}.
+
+  Every refined release emits the same 38 columns in the same order, but
+  v2021.1 names two of them the way its own SAS program does - \code{CMR_ARTH}
+  and \code{CMR_CHF}, which v2022.1 renamed to \code{CMR_AUTOIMMUNE} and
+  \code{CMR_HF}. Code that hardcodes those two names must branch on the
+  release, or read them from \code{cmr_releases()}-driven metadata.
 }
 \description{
-This function processes patient diagnosis data to identify comorbidities based on ICD-10-CM 
-diagnosis codes using the Elixhauser Comorbidity Software Refined (CMR) methodology.
-It handles Present on Admission (POA) logic, combination codes, and hierarchical exclusions.
+This function processes patient diagnosis data to identify comorbidities based on ICD-10-CM
+diagnosis codes using AHRQ/HCUP's Elixhauser Comorbidity Software.
 }
 \details{
-The function identifies 38 comorbidity categories:
+Two families of that software are available, selected with \code{variant}:
+\describe{
+  \item{\code{"refined"} (default)}{The Elixhauser Comorbidity Software
+    \strong{Refined} for ICD-10-CM, v2021.1 onward. 38 comorbidity measures,
+    18 of them identified using Present on Admission (POA) indicators.
+    Handles POA logic, combination codes, and hierarchical exclusions.}
+  \item{\code{"beta"}}{The superseded \strong{beta} software, v2016.2-v2020.1.
+    30 measures plus a derived \code{CMRB_HTN_C}, no POA at all. In its place
+    it applies an MS-DRG screen: a comorbidity is suppressed when the
+    encounter's MS-DRG is directly related to it, which is why this variant
+    takes \code{drg_col} and why AHRQ states it applies to inpatient data only.
+    Emits no comorbidity indices.}
+}
+
+
+Under \code{variant = "refined"} the function identifies 38 comorbidity
+categories (v2022.1 names shown; at v2021.1, \code{CMR_AUTOIMMUNE} is
+\code{CMR_ARTH} and \code{CMR_HF} is \code{CMR_CHF}):
 \itemize{
   \item CMR_AIDS: HIV/AIDS
   \item CMR_ALCOHOL: Alcohol abuse
@@ -113,7 +197,64 @@ The function identifies 38 comorbidity categories:
   \item CMR_VALVE: Valvular disease
   \item CMR_WGHTLOSS: Weight loss
 }
+
+Under \code{variant = "beta"} it identifies 30 measures - \code{CMRB_AIDS},
+\code{CMRB_ALCOHOL}, \code{CMRB_ANEMDEF}, \code{CMRB_ARTH},
+\code{CMRB_BLDLOSS}, \code{CMRB_CHF}, \code{CMRB_CHRNLUNG},
+\code{CMRB_COAG}, \code{CMRB_DEPRESS}, \code{CMRB_DM}, \code{CMRB_DMCX},
+\code{CMRB_DRUG}, \code{CMRB_HTN}, \code{CMRB_HTNCX}, \code{CMRB_HYPOTHY},
+\code{CMRB_LIVER}, \code{CMRB_LYMPH}, \code{CMRB_LYTES}, \code{CMRB_METS},
+\code{CMRB_NEURO}, \code{CMRB_OBESE}, \code{CMRB_PARA},
+\code{CMRB_PERIVASC}, \code{CMRB_PSYCH}, \code{CMRB_PULMCIRC},
+\code{CMRB_RENLFAIL}, \code{CMRB_TUMOR}, \code{CMRB_ULCER},
+\code{CMRB_VALVE}, \code{CMRB_WGHTLOSS} - plus \code{CMRB_HTN_C}, the union
+of \code{CMRB_HTN} and \code{CMRB_HTNCX}, derived after the MS-DRG screen.
+
+The \code{CMRB_} prefix is deliberate rather than cosmetic. Several beta
+measure names coincide with refined ones while meaning something different -
+beta \code{CHF} and \code{VALVE} are screened by MS-DRG where refined
+\code{CMR_HF} and \code{CMR_VALVE} are screened by POA - so the two families
+are kept in separate namespaces and \code{\link{cmr_index}} refuses a beta
+result outright.
 }
+\section{Deliberate differences from the AHRQ SAS programs}{
+
+Scoring reproduces AHRQ's SAS output exactly on every supported release - see
+the parity harnesses in \code{simulation/}. What follows is the short list of
+places where the \emph{interface} is deliberately more forgiving, or where the
+caller retains a responsibility SAS takes on. None of them changes a flag for
+input SAS would also have accepted.
+\describe{
+  \item{Diagnosis codes are normalized}{\code{\link{normalize_icd10}} upcases,
+    strips embedded decimal points and trims whitespace, so \code{"e11.9"} and
+    \code{"E119"} score alike. The SAS program does none of this - it has no
+    \code{UPCASE}, \code{COMPRESS} or \code{STRIP} on the diagnosis array -
+    and expects uppercase, decimal-free codes. Anything SAS matches, ecsr10
+    matches identically; ecsr10 additionally matches input SAS would have
+    dropped.}
+  \item{POA values are upcased}{SAS compares \code{DXPOA IN ("Y","W")}
+    case-sensitively, so a lowercase \code{"y"} is treated as not-present-on-
+    admission. ecsr10 upcases first.}
+  \item{The encounter's diagnosis count is not applied}{SAS bounds its loop at
+    \code{MIN(&MAXNDX,&NUMDX)}, ignoring a populated diagnosis column beyond
+    the encounter's \code{I10_NDX}. ecsr10 has no \code{I10_NDX} analogue and
+    scores every column in \code{dx_cols}; truncate it yourself if your data
+    carries a meaningful count.}
+  \item{The principal diagnosis is not excluded automatically}{See
+    \code{dx_cols}. Passing a position-1 column warns rather than errors.}
+  \item{Beta output is a superset}{\code{variant = "beta"} keeps
+    \code{CMRB_HTN} and \code{CMRB_HTNCX}, which AHRQ's program \code{DROP}s in
+    favour of their union \code{CMRB_HTN_C}, and carries a \code{CMRB_} prefix
+    the SAS does not use.}
+  \item{\code{cmr_index()} on an all-missing frame}{A hand-built frame in which
+    every \code{CMR_*} input is \code{NA} scores 0, where SAS \code{SUM()} of
+    all-missing terms returns missing. Not reachable from
+    \code{comorbidity()} output, which always carries the 20 POA-neutral
+    measures as 0/1 - and it is that same NA-as-zero treatment that makes
+    \code{use_poa = FALSE} match SAS.}
+}
+}
+
 \examples{
 \dontrun{
 # Simple workflow - uses built-in lookup data automatically
@@ -124,8 +265,14 @@ result <- comorbidity(patient_data,
 # Calculate risk indices
 result_with_indices <- cmr_index(result)
 
-# Advanced workflow with custom lookup data
-custom_comfmt <- build_comfmt_from_csv("path/to/custom_lookup.csv")
+# Advanced workflow with a custom lookup table. `comfmt` takes a plain data
+# frame of (target, pattern) - "\%" is a wildcard under the default
+# wildcard_mode - so no package internals are involved. Targets are the AHRQ
+# measure names WITHOUT the CMR_ prefix the output columns carry.
+custom_comfmt <- data.frame(
+  target  = c("DIAB_UNCX", "HTN_UNCX"),
+  pattern = c("E11\%",      "I10")
+)
 result <- comorbidity(patient_data,
                       dx_cols = c("dx2", "dx3", "dx4"),
                       comfmt = custom_comfmt)
@@ -135,5 +282,12 @@ result <- comorbidity(patient_data,
                       dx_cols = c("dx2", "dx3", "dx4"),
                       poa_cols = c("poa2", "poa3", "poa4"),
                       ncores = 4)
+
+# The superseded beta software, which screens on MS-DRG instead of POA
+beta <- comorbidity(patient_data,
+                    dx_cols = c("dx2", "dx3", "dx4"),
+                    variant = "beta",
+                    release = "2020.1",
+                    drg_col = "drg")
 }
 }

@@ -2,9 +2,12 @@
 % Please edit documentation in R/utils.R
 \name{cmr_version}
 \alias{cmr_version}
-\title{Default AHRQ CMR release}
+\title{Default AHRQ release}
 \usage{
-cmr_version()
+cmr_version(variant = c("refined", "beta"))
+}
+\arguments{
+\item{variant}{\code{"refined"} (default) or \code{"beta"}.}
 }
 \value{
 Character scalar, e.g. \code{"2026.1"}.
@@ -12,18 +15,20 @@ Character scalar, e.g. \code{"2026.1"}.
 \description{
 Returns the release \code{\link{comorbidity}} and \code{\link{cmr_index}} use
 when their \code{release} argument is not given - the newest one this package
-ships tables for. Pass \code{release =} explicitly to score under an older one;
-\code{\link{cmr_releases}} lists the choices.
+ships tables for, within the requested family. Pass \code{release =}
+explicitly to score under an older one; \code{\link{cmr_releases}} lists the
+choices.
 }
 \details{
 This is the analogue of the \code{CMR_VERSION} macro variable the SAS program
 stamps onto every output row. It is exposed as a function rather than an output
 column, so \code{comorbidity()}'s result schema is unaffected. The release a
 particular result was scored under is recorded on it as the \code{cmr_release}
-attribute.
+attribute, and the family as \code{cmr_variant}.
 }
 \examples{
 cmr_version()
+cmr_version("beta")
 }
 \seealso{
 \code{\link{cmr_releases}}
